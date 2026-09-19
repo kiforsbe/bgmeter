@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/kiforsbe/bgmeter/security/policy
+    about: Use the security policy and do not disclose vulnerabilities or sensitive data publicly.
+  - name: Usage and support
+    url: https://github.com/kiforsbe/bgmeter/blob/main/SUPPORT.md
+    about: Read the support policy before requesting help.

@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bgmeter-core"
+version = "0.1.0"
+description = "Protocol-neutral public contracts for blood glucose meter drivers"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "kiforsbe" }]
+requires-python = ">=3.13"
+dependencies = [
+    "bleak",
+    "tzlocal",
+    "tzdata; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bgmeter"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

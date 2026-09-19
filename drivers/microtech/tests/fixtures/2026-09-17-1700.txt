@@ -1,0 +1,1044 @@
+    -> [READ RAW] Hex: 73 6b 00 00 00 93 15 00
+    -> [INTERPRETATION] System Identifier (Mapped OUI / MAC: 73:6b:00:00:00:93:15:00)
+  [CHAR] 00002a24-0000-1000-8000-00805f9b34fb (Model Number String) | Props: [read]
+    -> [READ RAW] Hex: 4d 6f 64 65 6c 20 4e 75 6d 62 65 72 00
+    -> [INTERPRETATION] Value: 'Model Number.'
+  [CHAR] 00002a25-0000-1000-8000-00805f9b34fb (Serial Number String) | Props: [read]
+    -> [READ RAW] Hex: 53 65 72 69 61 6c 20 4e 75 6d 62 65 72 00
+    -> [INTERPRETATION] Value: 'Serial Number.'
+  [CHAR] 00002a26-0000-1000-8000-00805f9b34fb (Firmware Revision String) | Props: [read]
+    -> [READ RAW] Hex: 46 69 72 6d 77 61 72 65 20 52 65 76 69 73 69 6f 6e 00
+    -> [INTERPRETATION] Value: 'Firmware Revision.'
+  [CHAR] 00002a27-0000-1000-8000-00805f9b34fb (Hardware Revision String) | Props: [read]
+    -> [READ RAW] Hex: 48 61 72 64 77 61 72 65 20 52 65 76 69 73 69 6f 6e 00
+    -> [INTERPRETATION] Value: 'Hardware Revision.'
+  [CHAR] 00002a28-0000-1000-8000-00805f9b34fb (Software Revision String) | Props: [read]
+    -> [READ RAW] Hex: 53 6f 66 74 77 61 72 65 20 52 65 76 69 73 69 6f 6e 00
+    -> [INTERPRETATION] Value: 'Software Revision.'
+  [CHAR] 00002a29-0000-1000-8000-00805f9b34fb (Manufacturer Name String) | Props: [read]
+    -> [READ RAW] Hex: 4d 61 6e 75 66 61 63 74 75 72 65 72 20 4e 61 6d 65 00
+    -> [INTERPRETATION] Value: 'Manufacturer Name.'
+  [CHAR] 00002a2a-0000-1000-8000-00805f9b34fb (IEEE 11073-20601 Regulatory Cert. Data List) | Props: [read]
+    -> [READ RAW] Hex: fe 00 65 78 70 65 72 69 6d 65 6e 74 61 6c
+    -> [INTERPRETATION] Regulatory Certification: 'experimental'
+  [CHAR] 00002a50-0000-1000-8000-00805f9b34fb (PnP ID) | Props: [read]
+    -> [READ RAW] Hex: 01 0d 00 00 00 10 01
+    -> [INTERPRETATION] PnP ID: Vendor Source=1 (SIG), Vendor=Texas Instruments Inc., Product ID=0x0000, Version=1.16.0
+
+[SERVICE] 0000ffe0-0000-1000-8000-00805f9b34fb (Vendor specific)
+  [CHAR] 0000ffe1-0000-1000-8000-00805f9b34fb (Vendor specific) | Props: [read, write-without-response, notify, write]
+    [DESC] 00002902-0000-1000-8000-00805f9b34fb (handle 38)
+    [DESC] 00002901-0000-1000-8000-00805f9b34fb (handle 39)
+    -> [READ RAW] Hex: 01
+    -> [INTERPRETATION] GoChek Vendor Channel State: 0x01 (Data Channel Ready / Idle)
+
+================================================================================
+                 DEVICE INFORMATION SERVICE (DIS) SUMMARY              
+================================================================================
+  - System ID             : System Identifier (Mapped OUI / MAC: 73:6b:00:00:00:93:15:00)
+  - Model Number          : Value: 'Model Number.'
+  - Serial Number         : Value: 'Serial Number.'
+  - Firmware Revision     : Value: 'Firmware Revision.'
+  - Hardware Revision     : Value: 'Hardware Revision.'
+  - Software Revision     : Value: 'Software Revision.'
+  - Manufacturer Name     : Value: 'Manufacturer Name.'
+  - PnP ID                : PnP ID: Vendor Source=1 (SIG), Vendor=Texas Instruments Inc., Product ID=0x0000, Version=1.16.0
+
+================================================================================
+           EXTRACTING SAVED BLOOD GLUCOSE MEMORY RECORDS              
+================================================================================
+Targeting Data Characteristic: 0000ffe1-0000-1000-8000-00805f9b34fb (Vendor specific)
+Enabling notifications on 0000ffe1-0000-1000-8000-00805f9b34fb...
+
+Transmitting Handshake / Time Sync: Hex 51 22 1a 09 11 11 1c d4
+Transmitting Read Record Count: Hex 51 2b 00 00 00 00 00 7c
+Transmitting Read Record #0: Hex 2d 2d 00 00 10 00 80 c6 01 05 00 00 84 bf 02 01 00 00 2d 2d
+
+[17:28:34.731] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 00 4a 05 01 84 bf 63 7f 05 01 09 09 2d 2d
+  ASCII: '--.....J....c.....--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -22.3 mg/dL (-1.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:34.768] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 00 ad 11 11 1b 25 17 80 00 67 00 00 2d 2d
+  ASCII: '--.........%...g..--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 2354952600.0 mg/dL (130700000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:34.828] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 80 e0 00 04 03 00 00 00 2d 2d
+  ASCII: '--............--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+Transmitting Read Record #1: Hex 2d 2d 00 00 10 00 80 c6 01 05 00 00 45 7f 02 01 00 01 2d 2d
+
+[17:28:35.209] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 00 4a 05 01 84 bf 63 7f 05 01 09 09 2d 2d
+  ASCII: '--.....J....c.....--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -22.3 mg/dL (-1.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:35.210] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 00 ad 11 11 1b 25 17 80 00 67 00 00 2d 2d
+  ASCII: '--.........%...g..--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 2354952600.0 mg/dL (130700000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:35.308] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 80 e0 00 04 03 00 00 00 2d 2d
+  ASCII: '--............--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:35.308] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 01 14 05 01 45 7f 43 c2 05 01 1a 09 2d 2d
+  ASCII: '--........E.C.....--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -33693660000000.0 mg/dL (-1870000000000.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:35.309] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 01 f3 10 0d 2b 28 18 80 00 62 00 00 2d 2d
+  ASCII: '--........+(...b..--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -3612609000.0 mg/dL (-200500000.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:35.408] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 81 be 00 01 03 00 00 00 2d 2d
+  ASCII: '--............--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+Transmitting Read Record #2: Hex 2d 2d 00 00 10 00 80 c6 01 05 00 00 05 7e 02 01 00 02 2d 2d
+
+[17:28:35.769] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 01 14 05 01 05 7e 17 27 05 01 1a 09 2d 2d
+  ASCII: '--.........~.'....--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -91351260000000.0 mg/dL (-5070000000000.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:35.770] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 01 f3 10 0d 2b 28 18 80 00 62 00 00 2d 2d
+  ASCII: '--........+(...b..--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -3612609000.0 mg/dL (-200500000.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:35.848] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 81 be 00 01 03 00 00 00 2d 2d
+  ASCII: '--............--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+Transmitting Read Record #3: Hex 2d 2d 00 00 10 00 80 c6 01 05 00 00 c4 be 02 01 00 03 2d 2d
+
+[17:28:36.228] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 02 f6 05 01 c4 be b6 a5 05 01 09 09 2d 2d
+  ASCII: '--................--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -56.9 mg/dL (-3.16 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:36.308] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 02 11 11 06 19 32 18 80 00 68 00 00 2d 2d
+  ASCII: '--.........2...h..--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 9675666000.0 mg/dL (537000000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:36.309] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 82 5c 00 03 03 00 00 00 2d 2d
+  ASCII: '--.....\......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+Transmitting Read Record #4: Hex 2d 2d 00 00 10 00 80 c6 01 05 00 00 85 7c 02 01 00 04 2d 2d
+
+[17:28:36.689] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 02 f6 05 01 c4 be b6 a5 05 01 09 09 2d 2d
+  ASCII: '--................--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -56.9 mg/dL (-3.16 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:36.708] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 02 11 11 06 19 32 18 80 00 68 00 00 2d 2d
+  ASCII: '--.........2...h..--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 9675666000.0 mg/dL (537000000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:36.748] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 82 5c 00 03 03 00 00 00 2d 2d
+  ASCII: '--.....\......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:36.788] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 03 a8 05 01 85 7c 12 bd 05 01 09 09 2d 2d
+  ASCII: '--.........|......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -160540380000000.0 mg/dL (-8910000000000.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:36.808] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 03 4f 10 13 0a 10 1b 80 00 86 00 00 2d 2d
+  ASCII: '--.....O..........--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 1801800.0 mg/dL (100000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:36.888] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 83 02 00 02 03 00 00 00 2d 2d
+  ASCII: '--............--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+Transmitting Read Record #5: Hex 2d 2d 00 00 10 00 80 c6 01 05 00 00 44 bc 02 01 00 05 2d 2d
+
+[17:28:37.249] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 03 a8 05 01 44 bc df 21 05 01 09 09 2d 2d
+  ASCII: '--........D..!....--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -172.3 mg/dL (-9.56 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:37.291] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 03 4f 10 13 0a 10 1b 80 00 86 00 00 2d 2d
+  ASCII: '--.....O..........--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 1801800.0 mg/dL (100000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:37.328] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 83 02 00 02 03 00 00 00 2d 2d
+  ASCII: '--............--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+Transmitting Read Record #6: Hex 2d 2d 00 00 10 00 80 c6 01 05 00 00 04 bd 02 01 00 06 2d 2d
+
+[17:28:37.749] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 03 a8 05 01 44 bc df 21 05 01 09 09 2d 2d
+  ASCII: '--........D..!....--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -172.3 mg/dL (-9.56 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:37.750] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 03 4f 10 13 0a 10 1b 80 00 86 00 00 2d 2d
+  ASCII: '--.....O..........--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 1801800.0 mg/dL (100000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:37.788] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 83 02 00 02 03 00 00 00 2d 2d
+  ASCII: '--............--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:37.830] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 04 2b 05 01 04 bd c8 f5 05 01 09 09 2d 2d
+  ASCII: '--.....+..........--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -137.7 mg/dL (-7.64 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:37.891] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 04 cc 11 11 1b 25 17 80 00 67 00 00 2d 2d
+  ASCII: '--.........%...g..--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 2354952600.0 mg/dL (130700000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:37.928] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 84 81 00 04 03 00 00 00 2d 2d
+  ASCII: '--............--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+Transmitting Read Record #7: Hex 2d 2d 00 00 10 00 80 c6 01 05 00 00 c5 7d 02 01 00 07 2d 2d
+
+[17:28:38.289] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 04 2b 05 01 c5 7d 05 69 05 01 09 09 2d 2d
+  ASCII: '--.....+...}.i....--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -102882780000000.0 mg/dL (-5710000000000.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:38.388] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 04 cc 11 11 1b 25 17 80 00 67 00 00 2d 2d
+  ASCII: '--.........%...g..--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 2354952600.0 mg/dL (130700000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:38.389] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 84 81 00 04 03 00 00 00 2d 2d
+  ASCII: '--............--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+Transmitting Read Record #8: Hex 2d 2d 00 00 10 00 80 c6 01 05 00 00 85 79 02 01 00 08 2d 2d
+
+[17:28:38.769] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 04 2b 05 01 c5 7d 05 69 05 01 09 09 2d 2d
+  ASCII: '--.....+...}.i....--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -102882780000000.0 mg/dL (-5710000000000.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:38.808] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 04 cc 11 11 1b 25 17 80 00 67 00 00 2d 2d
+  ASCII: '--.........%...g..--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 2354952600.0 mg/dL (130700000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:38.868] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 84 81 00 04 03 00 00 00 2d 2d
+  ASCII: '--............--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:38.869] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 05 75 05 01 85 79 5a 3f 05 01 00 00 2d 2d
+  ASCII: '--.....u...yZ?....--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -298918620000000.0 mg/dL (-16590000000000.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:38.909] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 05 92 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--................--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:38.968] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 85 df 00 05 03 00 00 00 2d 2d
+  ASCII: '--............--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+Transmitting Read Record #9: Hex 2d 2d 00 00 10 00 80 c6 01 05 00 00 44 b9 02 01 00 09 2d 2d
+
+[17:28:39.409] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 05 75 05 01 44 b9 97 a3 05 01 00 00 2d 2d
+  ASCII: '--.....u..D.......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:39.409] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 05 92 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--................--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:39.468] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 85 df 00 05 03 00 00 00 2d 2d
+  ASCII: '--............--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+Transmitting Dump Memory Records: Hex 51 33 00 00 00 00 00 84
+
+======================================================================
+  LISTENING FOR MEMORY TELEMETRY STREAM (30s)
+  PLEASE PRESS AND HOLD THE 'M' (MEMORY) BUTTON UNTIL THE BLUETOOTH
+  ICON APPEARS, THEN LEAVE THE METER AWAKE FOR THE TRANSFER
+======================================================================
+
+
+[17:28:39.869] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 05 75 05 01 44 b9 97 a3 05 01 00 00 2d 2d
+  ASCII: '--.....u..D.......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:39.869] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 05 92 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--................--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:39.908] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 85 df 00 05 03 00 00 00 2d 2d
+  ASCII: '--............--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:40.309] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 05 75 05 01 44 b9 97 a3 05 01 00 00 2d 2d
+  ASCII: '--.....u..D.......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:40.351] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 05 92 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--................--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:40.389] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 85 df 00 05 03 00 00 00 2d 2d
+  ASCII: '--............--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:40.792] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 06 97 05 01 44 b9 d3 a3 05 01 00 00 2d 2d
+  ASCII: '--........D.......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:40.808] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 06 70 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--.....p..........--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:40.889] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 86 3d 00 06 03 00 00 00 2d 2d
+  ASCII: '--.....=......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:41.329] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 06 97 05 01 44 b9 d3 a3 05 01 00 00 2d 2d
+  ASCII: '--........D.......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:41.349] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 06 70 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--.....p..........--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:41.349] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 86 3d 00 06 03 00 00 00 2d 2d
+  ASCII: '--.....=......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:41.769] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 06 97 05 01 44 b9 d3 a3 05 01 00 00 2d 2d
+  ASCII: '--........D.......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:41.770] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 06 70 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--.....p..........--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:41.828] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 86 3d 00 06 03 00 00 00 2d 2d
+  ASCII: '--.....=......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:42.231] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 06 97 05 01 44 b9 d3 a3 05 01 00 00 2d 2d
+  ASCII: '--........D.......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:42.268] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 06 70 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--.....p..........--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:42.328] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 86 3d 00 06 03 00 00 00 2d 2d
+  ASCII: '--.....=......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:42.709] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 07 c9 05 01 44 b9 ee 63 05 01 00 00 2d 2d
+  ASCII: '--........D..c....--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:42.728] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 07 2e 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--................--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:42.809] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 87 63 00 07 03 00 00 00 2d 2d
+  ASCII: '--.....c......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:43.208] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 07 c9 05 01 44 b9 ee 63 05 01 00 00 2d 2d
+  ASCII: '--........D..c....--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:43.209] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 07 2e 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--................--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:43.268] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 87 63 00 07 03 00 00 00 2d 2d
+  ASCII: '--.....c......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:43.709] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 07 c9 05 01 44 b9 ee 63 05 01 00 00 2d 2d
+  ASCII: '--........D..c....--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:43.709] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 07 2e 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--................--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:43.748] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 87 63 00 07 03 00 00 00 2d 2d
+  ASCII: '--.....c......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:44.149] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 07 c9 05 01 44 b9 ee 63 05 01 00 00 2d 2d
+  ASCII: '--........D..c....--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:44.191] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 07 2e 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--................--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:44.248] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 87 63 00 07 03 00 00 00 2d 2d
+  ASCII: '--.....c......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:44.729] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 08 88 05 01 44 b9 ba 62 05 01 00 00 2d 2d
+  ASCII: '--........D..b....--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:44.730] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 08 6f 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--.....o..........--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:44.730] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 88 22 00 08 03 00 00 00 2d 2d
+  ASCII: '--....."......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:45.149] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 08 88 05 01 44 b9 ba 62 05 01 00 00 2d 2d
+  ASCII: '--........D..b....--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:45.150] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 08 6f 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--.....o..........--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:45.189] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 88 22 00 08 03 00 00 00 2d 2d
+  ASCII: '--....."......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:45.591] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 08 88 05 01 44 b9 ba 62 05 01 00 00 2d 2d
+  ASCII: '--........D..b....--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:45.628] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 08 6f 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--.....o..........--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:45.668] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 88 22 00 08 03 00 00 00 2d 2d
+  ASCII: '--....."......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:46.069] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 08 88 05 01 44 b9 ba 62 05 01 00 00 2d 2d
+  ASCII: '--........D..b....--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:46.131] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 08 6f 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--.....o..........--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:46.168] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 88 22 00 08 03 00 00 00 2d 2d
+  ASCII: '--....."......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:46.569] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 09 d6 05 01 44 b9 87 a2 05 01 00 00 2d 2d
+  ASCII: '--........D.......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:46.570] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 09 31 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--.....1..........--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:46.628] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 89 7c 00 09 03 00 00 00 2d 2d
+  ASCII: '--.....|......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:47.048] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 09 d6 05 01 44 b9 87 a2 05 01 00 00 2d 2d
+  ASCII: '--........D.......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:47.049] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 09 31 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--.....1..........--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:47.109] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 89 7c 00 09 03 00 00 00 2d 2d
+  ASCII: '--.....|......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:47.551] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 09 d6 05 01 44 b9 87 a2 05 01 00 00 2d 2d
+  ASCII: '--........D.......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:47.609] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 09 31 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--.....1..........--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:47.609] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 89 7c 00 09 03 00 00 00 2d 2d
+  ASCII: '--.....|......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+[17:28:48.009] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 00 09 d6 05 01 44 b9 87 a2 05 01 00 00 2d 2d
+  ASCII: '--........D.......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : -310.6 mg/dL (-17.24 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:48.049] <<< RECEIVED PACKET (20 bytes):
+  Hex  : 2d 2d 00 00 10 0a 09 31 00 00 00 00 00 00 00 00 00 00 2d 2d
+  ASCII: '--.....1..........--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 0.0 mg/dL (0.0 mmol/L)
+     Clinical Status : [HYPOGLYCEMIA (LOW)]
+  ============================================================
+
+[17:28:48.149] <<< RECEIVED PACKET (16 bytes):
+  Hex  : 2d 2d 00 00 0c 14 89 7c 00 09 03 00 00 00 2d 2d
+  ASCII: '--.....|......--'
+  ============================================================
+  -> PARSED RECORD:
+     Date / Time     : None
+     Blood Glucose   : 54054.0 mg/dL (3000.0 mmol/L)
+     Clinical Status : [SEVERE HYPERGLYCEMIA (VERY HIGH)]
+  ============================================================
+
+------------------------------------------------------
+ --- This is where I, the user, turned off the device.
+------------------------------------------------------
+
+[NOTICE] Device connection closed after 16s.
+
+================================================================================
+MEMORY EXTRACTION COMPLETE: Received 96 record payload(s)
+================================================================================
+
+[COMPLETE] Extracted all available device information and saved memory records.

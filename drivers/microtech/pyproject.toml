@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bgmeter-microtech"
+version = "0.1.0"
+description = "MicroTech blood glucose meter protocol driver"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "kiforsbe" }]
+requires-python = ">=3.13"
+dependencies = [
+    "bgmeter-core>=0.1,<0.2",
+]
+
+[project.entry-points."bgmeter.drivers"]
+microtech = "bgmeter_microtech:driver_factory"
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bgmeter_microtech"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
