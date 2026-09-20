@@ -119,6 +119,12 @@ and confirmed with saved device captures.
 - Responses may be fragmented. Outer byte 3 is the payload byte offset and bit
   7 of outer byte 4 marks the final fragment. The observed malformed-request
   response used offsets `0`, `10`, and `20`, confirming byte-offset assembly.
+- A notification carries at most 20 bytes, but escaping can make a frame longer:
+  a record containing a literal `2d` or `2f` byte (for example a measurement at
+  47 seconds, `2f`) turns a 20-byte frame into 21 bytes. The meter then sends
+  the frame in two notifications, the second holding a single trailing `2d`.
+  Frames therefore have to be reassembled across notifications, using the `2d 2d`
+  delimiters and the declared length in the transport header.
 - FFE1 supports notifications and write-without-response. Frames longer than
   20 bytes are written as 20 bytes, a 100 ms delay, then the remainder and
   another 100 ms delay.

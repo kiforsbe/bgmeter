@@ -138,6 +138,117 @@ def reassemble_transport_fragments(
     return bytes(result)
 
 
+_DELIMITER_BYTE = DELIMITER[0]
+_MAX_BUFFERED_BYTES = 1024
+
+
+class TransportFrameAssembler:
+    """Rebuild delimited transport frames from a stream of BLE notifications.
+
+    A notification holds at most 20 bytes, but escaping can push a frame past that
+    (each literal ``2d`` or ``2f`` body byte costs an extra byte), so the meter
+    then delivers one frame in several notifications. Feed notifications in
+    arrival order; complete frames come back as they finish.
+
+    A notification that opens with a delimiter starts a new frame, except when the
+    frame in progress already has its declared length and only lacks its closing
+    delimiter. That keeps a frame whose tail was lost from swallowing the next
+    one. Bytes that do not form a delimited frame come back as they are, so the
+    caller can record them as invalid.
+    """
+
+    def __init__(self) -> None:
+        self._buffer = bytearray()
+
+    def feed(self, data: bytes) -> tuple[bytes, ...]:
+        """Add one notification and return every frame it completes."""
+        data = bytes(data)
+        frames: list[bytes] = []
+        if (
+            self._buffer
+            and data.startswith(DELIMITER)
+            and not self._awaiting_closing_delimiter()
+        ):
+            frames.append(bytes(self._buffer))
+            self._buffer.clear()
+        self._buffer += data
+        frames.extend(self._drain())
+        return tuple(frames)
+
+    def flush(self) -> tuple[bytes, ...]:
+        """Return and forget any incomplete leftover bytes."""
+        if not self._buffer:
+            return ()
+        leftover = bytes(self._buffer)
+        self._buffer.clear()
+        return (leftover,)
+
+    @property
+    def pending_byte_count(self) -> int:
+        return len(self._buffer)
+
+    def _awaiting_closing_delimiter(self) -> bool:
+        buffer = self._buffer
+        if not buffer.startswith(DELIMITER):
+            return False
+        body = bytearray()
+        index = 2
+        while index < len(buffer):
+            value = buffer[index]
+            if value == ESCAPE:
+                if index + 1 >= len(buffer):
+                    return False
+                body.append(buffer[index + 1])
+                index += 2
+            elif value == _DELIMITER_BYTE:
+                # Half the closing delimiter is already here; the other half is a
+                # single byte, so a notification opening with a delimiter is new.
+                return False
+            else:
+                body.append(value)
+                index += 1
+        return len(body) >= 3 and len(body) == body[2]
+
+    @staticmethod
+    def _frame_end(buffer: bytearray) -> int | None:
+        index = 2
+        while index < len(buffer):
+            value = buffer[index]
+            if value == ESCAPE:
+                index += 2
+                continue
+            if value == _DELIMITER_BYTE:
+                if index + 1 >= len(buffer):
+                    return None
+                if buffer[index + 1] == _DELIMITER_BYTE:
+                    return index + 2
+            index += 1
+        return None
+
+    def _drain(self) -> list[bytes]:
+        frames: list[bytes] = []
+        buffer = self._buffer
+        while buffer:
+            if not buffer.startswith(DELIMITER):
+                if len(buffer) == 1 and buffer[0] == _DELIMITER_BYTE:
+                    break
+                cut = buffer.find(DELIMITER, 1)
+                if cut < 0:
+                    cut = len(buffer)
+                frames.append(bytes(buffer[:cut]))
+                del buffer[:cut]
+                continue
+            end = self._frame_end(buffer)
+            if end is None:
+                if len(buffer) > _MAX_BUFFERED_BYTES:
+                    frames.append(bytes(buffer))
+                    buffer.clear()
+                break
+            frames.append(bytes(buffer[:end]))
+            del buffer[:end]
+        return frames
+
+
 def build_official_transport_frame(
     payload: bytes,
     sequence: int = 0,

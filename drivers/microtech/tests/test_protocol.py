@@ -11,6 +11,7 @@ import pytest
 from bgmeter import CompletionStatus
 from bgmeter_microtech.collector import HistoryRecordCollector
 from bgmeter_microtech.framing import (
+    TransportFrameAssembler,
     build_device_info_request,
     build_history_request,
     build_official_transport_frame,
@@ -786,3 +787,179 @@ async def test_read_history_logs_absorbed_unsubscribe_failure_at_error(caplog) -
     assert record.name == "bgmeter_microtech.protocol"
     assert "RuntimeError" in record.getMessage()
     assert "unsubscribe failed" in record.getMessage()
+
+
+# A record whose seconds field is 0x2F. Escaping that byte grows the middle frame of
+# the reply from 20 to 21 bytes, which the meter sends as two notifications.
+ESCAPED_SECONDS_RECORD = bytes.fromhex("1a 09 14 07 1f 2f 16 80 00 64 00 00 00 0d 03 00 00 00")
+
+
+def _encode_frame(offset: int, final: bool, sequence: int, payload: bytes) -> bytes:
+    header = bytes((0, 0, 6 + len(payload), offset, (0x80 if final else 0) | sequence))
+    body = header + bytes((crc8_dallas(header),)) + payload
+    escaped = bytearray()
+    for value in body:
+        if value in (0x2D, 0x2F):
+            escaped.append(0x2F)
+        escaped.append(value)
+    return b"\x2d\x2d" + bytes(escaped) + b"\x2d\x2d"
+
+
+def _escaped_seconds_reply() -> tuple[bytes, bytes, bytes]:
+    record = ESCAPED_SECONDS_RECORD
+    return (
+        _encode_frame(0, False, 0, bytes.fromhex("05 01 84 bf 63 7f 05 01") + record[:2]),
+        _encode_frame(10, False, 0, record[2:12]),
+        _encode_frame(20, True, 0, record[12:]),
+    )
+
+
+def _split_reply_notifications() -> tuple[bytes, ...]:
+    first, middle, last = _escaped_seconds_reply()
+    assert len(middle) == 21
+    return first, middle[:20], middle[20:], last
+
+
+class SplitReplySession(FakeGattSession):
+    """Deliver each scripted piece as its own notification, in the order given."""
+
+    def _deliver(self, characteristic: str, transmission: tuple[bytes, ...]) -> None:
+        if self.handler is None:
+            return
+        for piece in transmission:
+            self.handler(characteristic, piece)
+
+
+def test_frame_assembler_passes_whole_frames_through() -> None:
+    assembler = TransportFrameAssembler()
+
+    for frame in _frames(2):
+        assert assembler.feed(frame) == (frame,)
+    assert assembler.pending_byte_count == 0
+
+
+def test_frame_assembler_joins_a_frame_split_across_notifications() -> None:
+    _, middle, _ = _escaped_seconds_reply()
+    assembler = TransportFrameAssembler()
+
+    assert assembler.feed(middle[:20]) == ()
+    assert assembler.pending_byte_count == 20
+    assert assembler.feed(middle[20:]) == (middle,)
+    assert assembler.pending_byte_count == 0
+
+
+@pytest.mark.parametrize("tail", [1, 2, 5])
+def test_frame_assembler_joins_a_split_at_any_tail_length(tail: int) -> None:
+    _, middle, _ = _escaped_seconds_reply()
+    assembler = TransportFrameAssembler()
+
+    assert assembler.feed(middle[:-tail]) == ()
+    assert assembler.feed(middle[-tail:]) == (middle,)
+
+
+def test_frame_assembler_joins_a_split_between_an_escape_and_its_byte() -> None:
+    _, middle, _ = _escaped_seconds_reply()
+    escape_at = middle.index(b"\x2f\x2f", 2)
+    assembler = TransportFrameAssembler()
+
+    assert assembler.feed(middle[: escape_at + 1]) == ()
+    assert assembler.feed(middle[escape_at + 1 :]) == (middle,)
+
+
+def test_frame_assembler_joins_a_frame_split_into_many_pieces() -> None:
+    _, middle, _ = _escaped_seconds_reply()
+    assembler = TransportFrameAssembler()
+
+    results = [assembler.feed(middle[index : index + 1]) for index in range(len(middle))]
+
+    assert results[:-1] == [()] * (len(middle) - 1)
+    assert results[-1] == (middle,)
+
+
+def test_frame_assembler_splits_frames_that_share_one_notification() -> None:
+    first, _, last = _escaped_seconds_reply()
+
+    assert TransportFrameAssembler().feed(first + last) == (first, last)
+
+
+@pytest.mark.parametrize("kept", [15, 20])
+def test_frame_assembler_does_not_let_a_truncated_frame_swallow_the_next(
+    kept: int,
+) -> None:
+    first, middle, _ = _escaped_seconds_reply()
+    assembler = TransportFrameAssembler()
+
+    assert assembler.feed(middle[:kept]) == ()
+    assert assembler.feed(first) == (middle[:kept], first)
+    assert assembler.pending_byte_count == 0
+
+
+def test_frame_assembler_takes_a_bare_delimiter_as_the_closing_bytes() -> None:
+    _, middle, _ = _escaped_seconds_reply()
+    assembler = TransportFrameAssembler()
+
+    assert assembler.feed(middle[:-2]) == ()
+    assert assembler.feed(b"\x2d\x2d") == (middle,)
+
+
+def test_frame_assembler_returns_bytes_that_are_not_a_frame() -> None:
+    assembler = TransportFrameAssembler()
+
+    assert assembler.feed(b"\x99\x98") == (b"\x99\x98",)
+    assert assembler.feed(b"\x2d") == ()
+    assert assembler.feed(b"\x00\x01") == (b"\x2d\x00\x01",)
+
+
+def test_frame_assembler_flush_returns_the_incomplete_leftover_once() -> None:
+    _, middle, _ = _escaped_seconds_reply()
+    assembler = TransportFrameAssembler()
+    assembler.feed(middle[:20])
+
+    assert assembler.flush() == (middle[:20],)
+    assert assembler.flush() == ()
+
+
+def test_collector_accepts_a_reply_whose_frame_arrives_in_two_notifications() -> None:
+    collector = HistoryRecordCollector()
+
+    added = [
+        record
+        for notification in _split_reply_notifications()
+        for record in collector.add_notification(notification)
+    ]
+
+    assert [record.native.event_index for record in added] == [13]
+    assert added[0].native.meter_datetime.second == 0x2F
+    assert len(added[0].fragments) == 3 and len(added[0].fragments[1]) == 21
+    assert collector.notification_count == 4
+    assert collector.complete_message_count == 1
+    assert collector.invalid_notification_count == 0
+    assert collector.attributions_since(0) == ("accepted",)
+
+
+def test_collector_records_an_unfinished_frame_as_invalid_when_finalized() -> None:
+    collector = HistoryRecordCollector()
+    _, middle, _ = _escaped_seconds_reply()
+
+    collector.add_notification(middle[:20])
+    assert collector.attributions_since(0) == ()
+    collector.finalize_pending()
+
+    assert collector.invalid_notification_count == 1
+    assert collector.attributions_since(0) == ("rejected_invalid_notification",)
+
+
+@pytest.mark.asyncio
+async def test_read_history_recovers_the_latest_record_from_a_split_frame() -> None:
+    events = []
+    session = SplitReplySession({0: [_split_reply_notifications()]})
+
+    collector = await read_history(
+        session, "ffe1", request_timeout=0.001, retries=1, progress=events.append
+    )
+
+    assert collector.expected_count == 13
+    assert collector.has_index(13)
+    assert collector.invalid_notification_count == 0
+    assert ("info", "Reading records: 1 of 13") in _progress_summary(events)
+    assert not any("damaged" in event.message for event in events)

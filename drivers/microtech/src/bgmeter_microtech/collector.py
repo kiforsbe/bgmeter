@@ -11,6 +11,7 @@ from bgmeter import CompletionStatus
 
 from .framing import (
     TransportFragment,
+    TransportFrameAssembler,
     decode_transport_fragment,
     reassemble_transport_fragments,
 )
@@ -95,6 +96,7 @@ class HistoryRecordCollector:
         self._responses: list[bytes] = []
         self._transmissions: list[_TransmissionEvidence] = []
         self._pending: dict[int, _PendingTransmission] = {}
+        self._frames = TransportFrameAssembler()
         self._records: dict[int, CapturedHistoryRecord] = {}
 
     @property
@@ -303,7 +305,9 @@ class HistoryRecordCollector:
         )
 
     def finalize_pending(self) -> None:
-        """Reject and preserve all incomplete fragment generations."""
+        """Reject and preserve all incomplete frames and fragment generations."""
+        for leftover in self._frames.flush():
+            self._add_frame(leftover)
         for sequence in tuple(sorted(self._pending)):
             self._reject_pending(sequence, "rejected_incomplete_generation")
 
@@ -311,10 +315,27 @@ class HistoryRecordCollector:
         self,
         data: bytes,
     ) -> tuple[CapturedHistoryRecord, ...]:
-        """Consume one notification and return newly accepted unique records."""
+        """Consume one notification and return newly accepted unique records.
+
+        One transport frame may span several notifications, so a notification can
+        complete no frame, one frame, or more than one.
+        """
         raw_notification = bytes(data)
         self.notification_count += 1
         self._notifications.append(raw_notification)
+        added: list[CapturedHistoryRecord] = []
+        for frame in self._frames.feed(raw_notification):
+            added.extend(self._add_frame(frame))
+        if self._frames.pending_byte_count:
+            _log.debug(
+                "notification of %d bytes left %d bytes of an incomplete frame buffered",
+                len(raw_notification),
+                self._frames.pending_byte_count,
+            )
+        return tuple(added)
+
+    def _add_frame(self, raw_notification: bytes) -> tuple[CapturedHistoryRecord, ...]:
+        """Consume one complete transport frame."""
         try:
             fragment = decode_transport_fragment(raw_notification)
         except ValueError:
