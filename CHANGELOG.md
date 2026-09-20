@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [0.2.0] - 2026-09-20
 
 ### Added
 
@@ -11,6 +11,14 @@ All notable changes to this project are documented in this file.
   `ReadOptions.progress`, and a `progress` argument on `MeterManager`.
 - Standard-library logging in the core, MicroTech driver, and CLI, controlled by
   `--log-level` (default `error`) and `--log-file`.
+
+### Fixed
+
+- MicroTech reads no longer fail when a reply frame is split across two BLE
+  notifications. Escaping a literal `2d` or `2f` byte in a record (for example a
+  measurement taken at 47 seconds) pushes a frame from 20 to 21 bytes, which the
+  meter sends as 20 bytes plus a lone trailing byte; the driver now reassembles
+  frames across notifications.
 
 ### Changed
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bgmeter-cli"
-version = "0.1.0"
+version = "0.2.0"
 description = "Driver-neutral command line interface for blood glucose meters"
 readme = "README.md"
 license = "MIT"
@@ -12,8 +12,8 @@ license-files = ["LICENSE"]
 authors = [{ name = "kiforsbe" }]
 requires-python = ">=3.13"
 dependencies = [
-    "bgmeter-core>=0.1,<0.2",
-    "bgmeter-microtech>=0.1,<0.2",
+    "bgmeter-core>=0.2,<0.3",
+    "bgmeter-microtech>=0.2,<0.3",
     "platformdirs>=4,<5",
 ]
 

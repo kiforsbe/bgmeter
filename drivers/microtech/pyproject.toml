@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bgmeter-microtech"
-version = "0.1.0"
+version = "0.2.0"
 description = "MicroTech blood glucose meter protocol driver"
 readme = "README.md"
 license = "MIT"
@@ -12,7 +12,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "kiforsbe" }]
 requires-python = ">=3.13"
 dependencies = [
-    "bgmeter-core>=0.1,<0.2",
+    "bgmeter-core>=0.2,<0.3",
 ]
 
 [project.entry-points."bgmeter.drivers"]
