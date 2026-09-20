@@ -384,7 +384,7 @@ def test_devices_and_info_use_registered_drivers_and_driver_filter(
     devices = (make_device(1, driver_id="driver-one"), make_device(2, driver_id="driver-two"))
     managers = []
 
-    def manager_factory(registry):
+    def manager_factory(registry, progress=None):
         manager = FakeManager(registry, devices=devices)
         managers.append(manager)
         return manager
@@ -424,7 +424,7 @@ def test_read_interactively_selects_from_multiple_devices(
     devices = (make_device(1), make_device(2))
     managers = []
 
-    def manager_factory(registry):
+    def manager_factory(registry, progress=None):
         manager = FakeManager(registry, devices=devices, result=complete_result)
         managers.append(manager)
         return manager
@@ -452,7 +452,7 @@ def test_read_noninteractive_requires_device_and_keeps_data_off_stderr(
     config_path = tmp_path / "drivers.json"
     save_config(DriverConfig(("example",)), config_path)
 
-    def manager_factory(registry):
+    def manager_factory(registry, progress=None):
         return FakeManager(registry, devices=(make_device(),), result=complete_result)
 
     status, stdout, stderr = invoke(
@@ -480,7 +480,7 @@ def test_read_does_not_create_database_without_store(
     config_path = tmp_path / "drivers.json"
     save_config(DriverConfig(("example",)), config_path)
     database_path = tmp_path / "measurements.sqlite3"
-    manager_factory = lambda registry: FakeManager(
+    manager_factory = lambda registry, progress=None: FakeManager(
         registry, devices=(make_device(),), result=complete_result
     )
 
@@ -505,7 +505,7 @@ def test_read_stores_normalized_records_when_store_is_requested(
     config_path = tmp_path / "drivers.json"
     save_config(DriverConfig(("example",)), config_path)
     database_path = tmp_path / "measurements.sqlite3"
-    manager_factory = lambda registry: FakeManager(
+    manager_factory = lambda registry, progress=None: FakeManager(
         registry, devices=(make_device(),), result=complete_result
     )
 
@@ -546,7 +546,7 @@ def test_partial_read_stores_valid_records_before_returning_status_five(
     save_config(DriverConfig(("example",)), config_path)
     database_path = tmp_path / "measurements.sqlite3"
     partial = replace(complete_result, completion=CompletionStatus.PARTIAL)
-    manager_factory = lambda registry: FakeManager(
+    manager_factory = lambda registry, progress=None: FakeManager(
         registry, devices=(make_device(),), result=partial
     )
 
@@ -571,7 +571,7 @@ def test_store_failure_returns_status_six_without_publishing_output(
     config_path = tmp_path / "drivers.json"
     save_config(DriverConfig(("example",)), config_path)
     output = tmp_path / "records.csv"
-    manager_factory = lambda registry: FakeManager(
+    manager_factory = lambda registry, progress=None: FakeManager(
         registry, devices=(make_device(),), result=complete_result
     )
     monkeypatch.setattr(
@@ -617,7 +617,7 @@ def test_discovery_and_read_share_one_asyncio_lifecycle(
             loops.append(asyncio.get_running_loop())
             return await super().read(device, options)
 
-    def manager_factory(registry):
+    def manager_factory(registry, progress=None):
         return LoopAwareManager(
             registry, devices=(make_device(),), result=complete_result
         )
@@ -724,7 +724,7 @@ def test_read_supports_repeated_outputs_and_atomic_overwrite_protection(
     json_path = tmp_path / "records.json"
     managers = []
 
-    def manager_factory(registry):
+    def manager_factory(registry, progress=None):
         manager = FakeManager(
             registry, devices=(make_device(),), result=complete_result
         )
@@ -812,7 +812,7 @@ def test_read_maps_temporary_file_creation_failure_to_export_status(
     config_path = tmp_path / "drivers.json"
     save_config(DriverConfig(("example",)), config_path)
 
-    def manager_factory(registry):
+    def manager_factory(registry, progress=None):
         return FakeManager(registry, devices=(make_device(),), result=complete_result)
 
     def fail_mkstemp(*args, **kwargs):
@@ -848,7 +848,7 @@ def test_read_closes_temporary_descriptor_if_open_fails(
     save_config(DriverConfig(("example",)), config_path)
     descriptors = []
 
-    def manager_factory(registry):
+    def manager_factory(registry, progress=None):
         return FakeManager(registry, devices=(make_device(),), result=complete_result)
 
     def fail_fdopen(descriptor, *args, **kwargs):
@@ -899,7 +899,7 @@ def test_cli_maps_public_errors_to_documented_exit_codes(
     config_path = tmp_path / "drivers.json"
     save_config(DriverConfig(("example",)), config_path)
 
-    def manager_factory(registry):
+    def manager_factory(registry, progress=None):
         return FakeManager(
             registry,
             devices=(make_device(),),
@@ -934,7 +934,7 @@ def test_usage_export_and_incomplete_read_exit_codes(
         termination_reason="missing_records",
     )
 
-    def manager_factory(registry):
+    def manager_factory(registry, progress=None):
         return FakeManager(registry, devices=(make_device(),), result=partial)
 
     status, stdout, stderr = invoke(
@@ -1048,7 +1048,7 @@ def test_invalid_timezone_returns_usage_status_without_read_or_traceback(
     save_config(DriverConfig(("example",)), config_path)
     managers = []
 
-    def manager_factory(registry):
+    def manager_factory(registry, progress=None):
         manager = FakeManager(
             registry, devices=(make_device(),), result=complete_result
         )

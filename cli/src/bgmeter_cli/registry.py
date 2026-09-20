@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from dataclasses import dataclass
 from typing import Iterable
@@ -9,6 +10,8 @@ from typing import Iterable
 from bgmeter import DriverDescriptor, DriverRegistry
 
 from .config import DriverConfig
+
+_log = logging.getLogger(__name__)
 
 
 class DriverSelectionError(ValueError):
@@ -138,6 +141,7 @@ def load_registered_registry(config: DriverConfig) -> RegistryLoad:
     for name in config.registered:
         matches = by_name.get(name, [])
         if not matches:
+            _log.error("registered driver entry point %r is not installed", name)
             plugins.append(
                 DriverPlugin(
                     entry_point=name,
@@ -150,6 +154,7 @@ def load_registered_registry(config: DriverConfig) -> RegistryLoad:
             )
             continue
         if len(matches) != 1:
+            _log.error("multiple installed entry points are named %r", name)
             plugins.append(
                 _plugin_from_point(
                     matches[0],
@@ -162,6 +167,15 @@ def load_registered_registry(config: DriverConfig) -> RegistryLoad:
         try:
             descriptor = registry.register_entry_point(name)
         except Exception as error:
+            _log.error(
+                "driver entry point %r failed to load: %s: %s",
+                name,
+                type(error).__name__,
+                error,
+            )
+            _log.debug(
+                "driver entry point %r load failure traceback", name, exc_info=True
+            )
             plugins.append(
                 _plugin_from_point(point, registered=True, error=str(error))
             )

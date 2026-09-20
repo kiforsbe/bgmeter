@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -31,6 +32,7 @@ from bgmeter import (
 from .protocol import read_history
 from .records import CapturedHistoryRecord
 
+_log = logging.getLogger(__name__)
 
 _BLUETOOTH_BASE_SUFFIX = "-0000-1000-8000-00805f9b34fb"
 _FFE0 = "ffe0"
@@ -185,7 +187,13 @@ class MicroTechBgmDriver:
                     continue
                 try:
                     raw_value = await session.read_gatt_char(characteristic.uuid)
-                except Exception:
+                except Exception as error:
+                    _log.warning(
+                        "probe could not read characteristic %s: %s: %s",
+                        short_uuid,
+                        type(error).__name__,
+                        error,
+                    )
                     continue
                 if short_uuid == _SYSTEM_ID:
                     metadata["microtech.system_id"] = raw_value
@@ -193,6 +201,10 @@ class MicroTechBgmDriver:
                     decoded = raw_value.decode("utf-8", errors="replace").strip("\x00 \t\r\n")
                     values[field] = decoded or None
 
+        _log.debug(
+            "probe read device information fields: %s",
+            sorted(name for name, value in values.items() if value is not None),
+        )
         return MeterIdentity(metadata=metadata, **values)
 
     async def read_records(
@@ -203,12 +215,20 @@ class MicroTechBgmDriver:
     ) -> ReadResult:
         characteristic = _require_data_characteristic(session)
         started_at = datetime.now(UTC)
+        _log.info(
+            "read_records started: device=%s timezone=%s request_timeout=%.1fs retries=%d",
+            device.selector,
+            options.timezone,
+            options.request_timeout,
+            options.retries,
+        )
         try:
             collector = await read_history(
                 session,
                 characteristic.uuid,
                 request_timeout=options.request_timeout,
                 retries=options.retries,
+                progress=options.progress,
             )
         except asyncio.CancelledError:
             raise
@@ -229,7 +249,7 @@ class MicroTechBgmDriver:
 
         if not collector.records:
             raise MeterTimeoutError(
-                "MicroTech meter returned no trustworthy history records"
+                "The meter connected but did not send any usable records."
             )
 
         records = tuple(
@@ -272,7 +292,7 @@ class MicroTechBgmDriver:
             else "missing_records" if missing_indexes else "count_unknown"
         )
 
-        return ReadResult(
+        result = ReadResult(
             device=device,
             records=records,
             completion=collector.status,
@@ -308,6 +328,14 @@ class MicroTechBgmDriver:
                 ),
             },
         )
+        _log.info(
+            "read_records finished: completion=%s records=%d expected=%s termination=%s",
+            result.completion.value,
+            result.received_count,
+            result.expected_count,
+            result.termination_reason,
+        )
+        return result
 
 
 def driver_factory() -> MicroTechBgmDriver:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Callable
 from inspect import isawaitable
 from typing import Any
@@ -17,6 +18,12 @@ from ..errors import (
 )
 from ..models import TransportEndpoint
 from .base import GattCharacteristic, GattService, GattSession, NotificationCallback
+
+_log = logging.getLogger(__name__)
+
+
+def _hex(data: bytes) -> str:
+    return bytes(data).hex(" ")
 
 
 def _connection_error(action: str, error: Exception) -> MeterConnectionError:
@@ -52,11 +59,14 @@ class _BleakGattSession:
 
     async def read_gatt_char(self, characteristic: str) -> bytes:
         try:
-            return bytes(await self._client.read_gatt_char(characteristic))
+            value = bytes(await self._client.read_gatt_char(characteristic))
         except asyncio.CancelledError:
             raise
         except Exception as error:
             raise _connection_error("read", error) from error
+        if _log.isEnabledFor(logging.DEBUG):
+            _log.debug("GATT read %s -> %d bytes: %s", characteristic, len(value), _hex(value))
+        return value
 
     async def write_gatt_char(
         self,
@@ -65,6 +75,14 @@ class _BleakGattSession:
         *,
         response: bool | None = None,
     ) -> None:
+        if _log.isEnabledFor(logging.DEBUG):
+            _log.debug(
+                "GATT write %s response=%s %d bytes: %s",
+                characteristic,
+                response,
+                len(data),
+                _hex(data),
+            )
         try:
             await self._client.write_gatt_char(
                 characteristic,
@@ -82,10 +100,14 @@ class _BleakGattSession:
         callback: NotificationCallback,
     ) -> None:
         async def adapt_notification(sender: object, data: bytearray) -> None:
+            _log.debug(
+                "GATT notification from %s: %d bytes", getattr(sender, "uuid", sender), len(data)
+            )
             result = callback(sender, bytes(data))
             if isawaitable(result):
                 await result
 
+        _log.debug("GATT subscribe %s", characteristic)
         try:
             await self._client.start_notify(characteristic, adapt_notification)
         except asyncio.CancelledError:
@@ -94,6 +116,7 @@ class _BleakGattSession:
             raise _connection_error("notification subscription", error) from error
 
     async def stop_notify(self, characteristic: str) -> None:
+        _log.debug("GATT unsubscribe %s", characteristic)
         try:
             await self._client.stop_notify(characteristic)
         except asyncio.CancelledError:
@@ -104,6 +127,7 @@ class _BleakGattSession:
     async def close(self) -> None:
         if self._closed:
             return
+        _log.debug("BLE disconnect %s", self.endpoint.identifier)
         try:
             await self._client.disconnect()
         except asyncio.CancelledError:
@@ -138,6 +162,7 @@ class BleTransport:
     ) -> tuple[TransportEndpoint, ...]:
         try:
             scanner = self._scanner_factory()
+            _log.info("BLE scan started: timeout=%.1fs", timeout)
             try:
                 await scanner.start()
                 await asyncio.sleep(timeout)
@@ -145,6 +170,12 @@ class BleTransport:
                 try:
                     await scanner.stop()
                 except BaseException as cleanup:
+                    _log.error(
+                        "BLE scanner cleanup failed after %s: %s: %s",
+                        type(primary).__name__,
+                        type(cleanup).__name__,
+                        cleanup,
+                    )
                     primary.add_note(
                         "Scanner cleanup also failed: "
                         f"{type(cleanup).__name__}: {cleanup}"
@@ -162,6 +193,15 @@ class BleTransport:
             self._endpoint_from_advertisement(device, advertisement)
             for device, advertisement in advertisements.values()
         ]
+        for endpoint in endpoints:
+            _log.debug(
+                "BLE endpoint %s name=%r services=%s rssi=%s",
+                endpoint.identifier,
+                endpoint.name,
+                sorted(endpoint.service_uuids),
+                endpoint.metadata.get("rssi"),
+            )
+        _log.info("BLE scan finished: %d endpoint(s)", len(endpoints))
         return tuple(sorted(endpoints, key=lambda endpoint: endpoint.identifier))
 
     async def connect(self, endpoint: TransportEndpoint) -> GattSession:
@@ -171,6 +211,7 @@ class BleTransport:
             )
 
         target = endpoint.handle if endpoint.handle is not None else endpoint.identifier
+        _log.debug("BLE connect: target=%s", target)
         try:
             client = self._client_factory(target)
         except asyncio.CancelledError:
@@ -179,12 +220,26 @@ class BleTransport:
             raise _connection_error("connection", error) from error
         try:
             await client.connect()
-            return _BleakGattSession(endpoint, client)
+            session = _BleakGattSession(endpoint, client)
+            _log.info(
+                "BLE connected: %s services=%d", endpoint.identifier, len(session.services)
+            )
+            for service in session.services:
+                _log.debug(
+                    "BLE service %s characteristics=%s",
+                    service.uuid,
+                    [characteristic.uuid for characteristic in service.characteristics],
+                )
+            return session
         except BaseException as error:
             try:
                 await client.disconnect()
-            except BaseException:
-                pass
+            except BaseException as cleanup:
+                _log.error(
+                    "BLE disconnect after a failed connect also failed: %s: %s",
+                    type(cleanup).__name__,
+                    cleanup,
+                )
             if isinstance(error, asyncio.CancelledError):
                 raise
             if isinstance(error, Exception):

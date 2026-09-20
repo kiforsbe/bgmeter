@@ -239,3 +239,33 @@ across enumeration order for distinct plugins and preserves package provenance
 for diagnostics. Indistinguishable repeated entries get occurrence suffixes
 `#2`, `#3`, etc.; collisions with ordinary single-name keys are also avoided.
 Named registration continues to reject ambiguous names.
+
+## Progress reporting and logging
+
+`MeterManager` accepts an optional `progress` callback that receives plain
+language `ProgressEvent` objects (`level` of `INFO`, `DETAIL` or `WARNING`, a
+one-sentence `message`, and optional `current`/`total` counters):
+
+```python
+from bgmeter import MeterManager, ProgressEvent
+
+def show(event: ProgressEvent) -> None:
+    print(event.message)
+
+manager = MeterManager.default(progress=show)
+```
+
+The manager passes the same callback to drivers through
+`ReadOptions.progress` (a caller's explicit value wins). A driver reports with
+`emit_progress(options.progress, ProgressEvent(...))`, which ignores a missing
+callback and never lets a failing callback break a read. Drivers that ignore the
+field keep working; `DRIVER_API_VERSION` is unchanged. Write messages in plain
+language, without protocol or Bluetooth jargon.
+
+Every layer also logs through the standard `logging` module (`bgmeter`,
+`bgmeter.manager`, `bgmeter.drivers`, `bgmeter.transports.bleak`). The package
+installs only a `NullHandler`; configure handlers in your application. ERROR
+means a failure the layer absorbed instead of raising, WARNING a recoverable
+problem, INFO a milestone (never glucose values or serial numbers), and DEBUG
+byte-level detail. Progress events and log records are independent and carry
+different information.

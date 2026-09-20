@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 import os
@@ -21,6 +22,7 @@ from bgmeter import (
     MeterConnectionError,
     MeterManager,
     MeterTimeoutError,
+    ProgressCallback,
     ProtocolError,
     ReadOptions,
     UnsupportedDeviceError,
@@ -28,6 +30,12 @@ from bgmeter import (
 
 from .config import ConfigError, DriverConfig, load_config, save_config
 from .exporters import render_csv, render_json, render_terminal
+from .logging_setup import (
+    DEFAULT_LOG_LEVEL,
+    LOG_LEVELS,
+    LogFileError,
+    configured_logging,
+)
 from .registry import (
     DriverPlugin,
     DriverSelectionError,
@@ -37,8 +45,11 @@ from .registry import (
     load_registered_registry,
     resolve_plugin,
 )
+from .reporter import ConsoleReporter
 from .selection import SelectionError, select_device
 from .store import MeasurementStore, StoreError
+
+_log = logging.getLogger(__name__)
 
 
 class ExportError(RuntimeError):
@@ -51,7 +62,7 @@ class OutputSpec:
     path: Path | None
 
 
-ManagerFactory = Callable[[object], object]
+ManagerFactory = Callable[[object, ProgressCallback | None], object]
 
 
 def _timezone_name(value: str) -> str:
@@ -62,21 +73,62 @@ def _timezone_name(value: str) -> str:
     return value
 
 
+def _add_reporting_options(parser: argparse.ArgumentParser, suffix: str) -> None:
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        dest=f"verbose_{suffix}",
+        help="explain progress in plain language (-v) with more detail (-vv)",
+    )
+    parser.add_argument(
+        "--log-level",
+        type=str.lower,
+        choices=LOG_LEVELS,
+        default=None,
+        dest=f"log_level_{suffix}",
+        help=f"minimum level of technical log records (default: {DEFAULT_LOG_LEVEL})",
+    )
+    parser.add_argument(
+        "--log-file",
+        type=Path,
+        default=None,
+        metavar="PATH",
+        dest=f"log_file_{suffix}",
+        help="write technical logs to this file instead of the terminal",
+    )
+
+
+def _verbosity(arguments) -> int:
+    return min(2, arguments.verbose_top + arguments.verbose_sub)
+
+
+def _log_settings(arguments) -> tuple[str, Path | None]:
+    level = arguments.log_level_sub or arguments.log_level_top or DEFAULT_LOG_LEVEL
+    log_file = arguments.log_file_sub or arguments.log_file_top
+    return level, log_file
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bgmeter",
         description="Read blood glucose meters through installed drivers.",
     )
+    _add_reporting_options(parser, "top")
     commands = parser.add_subparsers(dest="command", required=True)
 
     devices = commands.add_parser("devices", help="discover supported meters")
+    _add_reporting_options(devices, "sub")
     devices.add_argument("--driver", help="restrict discovery to one registered driver")
 
     info = commands.add_parser("info", help="show discovered meter information")
+    _add_reporting_options(info, "sub")
     info.add_argument("--device", required=True, help="device selector")
     info.add_argument("--driver", help="restrict discovery to one registered driver")
 
     read = commands.add_parser("read", help="read records from a meter")
+    _add_reporting_options(read, "sub")
     read.add_argument("--device", help="device selector (required non-interactively)")
     read.add_argument("--driver", help="restrict discovery to one registered driver")
     read.add_argument(
@@ -94,6 +146,7 @@ def _parser() -> argparse.ArgumentParser:
     read.add_argument("--force", action="store_true", help="replace existing output files")
 
     drivers = commands.add_parser("drivers", help="inspect persistent driver registration")
+    _add_reporting_options(drivers, "sub")
     driver_commands = drivers.add_subparsers(dest="driver_command", required=True)
     driver_list = driver_commands.add_parser("list", help="list installed drivers")
     scope = driver_list.add_mutually_exclusive_group()
@@ -108,8 +161,10 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _default_manager_factory(registry):
-    return MeterManager(registry=registry, transports=(BleTransport(),))
+def _default_manager_factory(registry, progress=None):
+    return MeterManager(
+        registry=registry, transports=(BleTransport(),), progress=progress
+    )
 
 
 def _report_plugin_errors(
@@ -292,6 +347,17 @@ def _publish_outputs(rendered, *, force: bool, stdout: TextIO) -> None:
             stdout.write(payload)
 
 
+_OUTCOME_LINES = {
+    CompletionStatus.PARTIAL: (
+        "warning: retrieval is partial: some records may be missing.\n"
+    ),
+    CompletionStatus.UNKNOWN: (
+        "warning: retrieval is unknown: the meter cannot confirm that this is "
+        "the full history.\n"
+    ),
+}
+
+
 async def _run_meter_command(
     arguments,
     *,
@@ -301,8 +367,9 @@ async def _run_meter_command(
     stdout: TextIO,
     stderr: TextIO,
     database_path: str | Path | None,
+    progress: ProgressCallback | None,
 ) -> int:
-    manager = manager_factory(registry)
+    manager = manager_factory(registry, progress)
     devices = await manager.discover()
 
     if arguments.command == "devices":
@@ -321,16 +388,28 @@ async def _run_meter_command(
 
     outputs = _parse_outputs(arguments.output)
     _check_destinations(outputs, force=arguments.force)
+    _log.info("reading %s", device.selector)
     result = await manager.read(device, ReadOptions(timezone=arguments.timezone))
+    _log.info(
+        "read complete: device=%s completion=%s records=%d",
+        device.selector,
+        result.completion.value,
+        len(result.records),
+    )
     if arguments.store:
+        _log.info("storing %d record(s)", len(result.records))
         try:
             MeasurementStore(database_path).store(result.records)
         except StoreError as error:
             raise ExportError(f"cannot store measurements: {error}") from error
     rendered = _render_outputs(result, outputs, show_raw=arguments.show_raw)
+    _log.debug(
+        "publishing outputs: %s",
+        [(o.format, str(o.path) if o.path else "stdout") for o in outputs],
+    )
     _publish_outputs(rendered, force=arguments.force, stdout=stdout)
     if result.completion is not CompletionStatus.COMPLETE:
-        stderr.write(f"retrieval is {result.completion.value}\n")
+        stderr.write(_OUTCOME_LINES[result.completion])
         return 5
     return 0
 
@@ -344,8 +423,10 @@ def _dispatch(
     config_path,
     database_path,
     manager_factory,
+    progress,
 ) -> int:
     config = load_config(config_path)
+    _log.debug("registered drivers: %s", list(config.registered))
     loaded = load_registered_registry(config)
     reported: set[tuple[str, str]] = set()
     _report_plugin_errors(loaded.errors, stderr, seen=reported)
@@ -447,8 +528,100 @@ def _dispatch(
             stdout=stdout,
             stderr=stderr,
             database_path=database_path,
+            progress=progress,
         )
     )
+
+
+_HINT_NOT_FOUND = (
+    "Make sure the meter is on and close by, and that Bluetooth is enabled on "
+    "this computer."
+)
+_HINT_UNSUPPORTED = (
+    "None of the devices found is a supported meter. Run 'bgmeter drivers list' "
+    "to see what is supported."
+)
+_HINT_TIMEOUT = (
+    "The meter did not answer in time. Wake the meter, make sure it is not still "
+    "connected to the phone app, and try again. Run with -vv to see what happened."
+)
+_HINT_CONNECTION = (
+    "Check that Bluetooth is turned on and that no other app is connected to the "
+    "meter."
+)
+_HINT_PROTOCOL = (
+    "The meter sent data this program could not understand. Try again; if it keeps "
+    "happening, run with -vv --log-level debug to see technical details."
+)
+
+
+def _classify(error: Exception) -> tuple[int, str | None] | None:
+    """Map a handled failure to its exit status and optional hint."""
+    if isinstance(
+        error, (SelectionError, DriverSelectionError, ConfigError, AmbiguousDeviceError)
+    ):
+        return 2, None
+    if isinstance(error, DeviceNotFoundError):
+        return 3, _HINT_NOT_FOUND
+    if isinstance(error, UnsupportedDeviceError):
+        return 3, _HINT_UNSUPPORTED
+    if isinstance(error, MeterTimeoutError):
+        return 5, _HINT_TIMEOUT
+    if isinstance(error, (DiscoveryError, MeterConnectionError)):
+        return 4, _HINT_CONNECTION
+    if isinstance(error, ProtocolError):
+        return 5, _HINT_PROTOCOL
+    if isinstance(error, ExportError):
+        return 6, None
+    return None
+
+
+def _log_final_failure(command: str, error: Exception, status: int) -> None:
+    _log.error(
+        "command %s failed: %s: %s (exit status %d)",
+        command,
+        type(error).__name__,
+        error,
+        status,
+    )
+    _log.debug("command %s failure traceback", command, exc_info=error)
+
+
+def _execute(
+    arguments,
+    *,
+    stdin: TextIO,
+    stdout: TextIO,
+    stderr: TextIO,
+    config_path,
+    database_path,
+    manager_factory,
+    progress,
+) -> int:
+    try:
+        return _dispatch(
+            arguments,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            config_path=config_path,
+            database_path=database_path,
+            manager_factory=manager_factory,
+            progress=progress,
+        )
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        stderr.write("interrupted\n")
+        return 130
+    except Exception as error:
+        classified = _classify(error)
+        if classified is None:
+            raise
+        status, hint = classified
+        stderr.write(f"error: {error}\n")
+        if hint is not None:
+            stderr.write(f"hint: {hint}\n")
+        _log_final_failure(arguments.command, error, status)
+        return status
 
 
 def run(
@@ -472,37 +645,25 @@ def run(
             arguments = parser.parse_args(argv)
     except SystemExit as error:
         return int(error.code)
+    reporter = ConsoleReporter(stderr, _verbosity(arguments))
+    level, log_file = _log_settings(arguments)
     try:
-        return _dispatch(
-            arguments,
-            stdin=stdin,
-            stdout=stdout,
-            stderr=stderr,
-            config_path=config_path,
-            database_path=database_path,
-            manager_factory=manager_factory or _default_manager_factory,
-        )
-    except (KeyboardInterrupt, asyncio.CancelledError):
-        stderr.write("interrupted\n")
-        return 130
-    except (SelectionError, DriverSelectionError, ConfigError, AmbiguousDeviceError) as error:
+        with configured_logging(
+            level, log_file=log_file, stream=stderr, command=arguments.command
+        ):
+            return _execute(
+                arguments,
+                stdin=stdin,
+                stdout=stdout,
+                stderr=stderr,
+                config_path=config_path,
+                database_path=database_path,
+                manager_factory=manager_factory or _default_manager_factory,
+                progress=reporter,
+            )
+    except LogFileError as error:
         stderr.write(f"error: {error}\n")
         return 2
-    except (DeviceNotFoundError, UnsupportedDeviceError) as error:
-        stderr.write(f"error: {error}\n")
-        return 3
-    except MeterTimeoutError as error:
-        stderr.write(f"error: {error}\n")
-        return 5
-    except (DiscoveryError, MeterConnectionError) as error:
-        stderr.write(f"error: {error}\n")
-        return 4
-    except ProtocolError as error:
-        stderr.write(f"error: {error}\n")
-        return 5
-    except ExportError as error:
-        stderr.write(f"error: {error}\n")
-        return 6
 
 
 __all__ = ["ExportError", "run"]

@@ -10,6 +10,8 @@ from types import MappingProxyType
 from typing import Mapping, TypeVar, cast
 from uuid import UUID
 
+from .progress import ProgressCallback
+
 
 _Value = TypeVar("_Value")
 
@@ -154,6 +156,7 @@ class ReadOptions:
     timezone: str | None = None
     request_timeout: float = 5.0
     retries: int = 3
+    progress: ProgressCallback | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass(frozen=True, slots=True)

@@ -120,10 +120,11 @@ package. `unregister` disables an entry point without uninstalling it.
 ## CLI commands and outputs
 
 ```text
+bgmeter [-v|-vv] [--log-level LEVEL] [--log-file PATH] <command> ...
 bgmeter devices [--driver DRIVER]
 bgmeter info --device DEVICE [--driver DRIVER]
 bgmeter read [--device DEVICE] [--driver DRIVER] [--timezone ZONE]
-             [--output OUTPUT]... [--show-raw] [--force]
+             [--output OUTPUT]... [--show-raw] [--store] [--force]
 bgmeter drivers list [--available|--registered]
 bgmeter drivers info DRIVER
 bgmeter drivers register DRIVER
@@ -188,6 +189,30 @@ Exit statuses are:
 | 5 | Protocol failure or non-complete retrieval |
 | 6 | Export or configuration-write failure |
 | 130 | Interrupted operation |
+
+## Verbosity and logging
+
+The CLI has two independent mechanisms, described in
+[ARCHITECTURE.md](../ARCHITECTURE.md#progress-reporting-and-logging):
+
+- `-v` / `-vv` show plain-language progress from `ProgressEvent`s (default: only
+  warnings and errors; every error also prints a `hint:` line).
+- `--log-level {debug,info,warning,error}` (default `error`) filters the stdlib
+  log records written to stderr; `--log-file PATH` writes them to the file
+  instead and to nothing else.
+
+To diagnose a failed read on hardware:
+
+```powershell
+bgmeter -vv read --device <selector> --log-file bgmeter.log --log-level debug
+```
+
+`-vv` shows which replies from the meter were ignored and why; `bgmeter.log`
+holds every request, every notification as hex, and the verdict for each reply.
+Debug logs contain glucose values as raw bytes, so review them before attaching
+them to an issue. Tests assert log records with `caplog`; new log calls must
+follow the level rules in ARCHITECTURE.md (a layer never logs an exception it
+re-raises, and INFO never carries glucose values or serial numbers).
 
 ## Meter time semantics
 

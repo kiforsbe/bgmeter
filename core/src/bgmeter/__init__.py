@@ -1,5 +1,9 @@
 """Public API for the protocol-neutral bgmeter core."""
 
+import logging
+
+logging.getLogger(__name__).addHandler(logging.NullHandler())
+
 from .drivers import (
     DRIVER_API_VERSION,
     DriverDescriptor,
@@ -33,6 +37,7 @@ from .models import (
     ReadResult,
     TransportEndpoint,
 )
+from .progress import ProgressCallback, ProgressEvent, ProgressLevel, emit_progress
 from .time import interpret_meter_datetime
 from .transports import (
     BleTransport, GattCharacteristic, GattService, GattSession, MeterTransport,
@@ -70,6 +75,9 @@ __all__ = [
     "MeterTransport",
     "MeterTimeoutError",
     "NotificationCallback",
+    "ProgressCallback",
+    "ProgressEvent",
+    "ProgressLevel",
     "ProtocolError",
     "RawCapture",
     "ReadOptions",
@@ -78,6 +86,7 @@ __all__ = [
     "TransportSession",
     "UnsupportedDeviceError",
     "discover_meters",
+    "emit_progress",
     "interpret_meter_datetime",
     "read_meter",
 ]

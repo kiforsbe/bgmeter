@@ -290,6 +290,33 @@ offset, flags, device and driver IDs, each raw byte representation, and driver
 metadata. Nested values use compact JSON in a CSV cell. Terminal presentation
 is deliberately human-oriented and is not a stable machine-readable schema.
 
+## Progress reporting and logging
+
+Two independent mechanisms; neither reads or filters the other.
+
+**Progress** is user-facing. Core defines `ProgressEvent(level, message,
+current, total)`, `ProgressLevel` (`INFO`, `DETAIL`, `WARNING`), `ProgressCallback`,
+and `emit_progress`. `MeterManager` takes an optional callback and hands it to
+drivers as `ReadOptions.progress` (an explicit caller value wins), so the
+`MeterDriver` protocol and `DRIVER_API_VERSION` are unchanged. Messages are plain
+ASCII sentences without protocol jargon. Within user-facing output a condition is
+reported by one line: a command-ending failure by the CLI's `error:`/`hint:`
+lines and a non-complete read by its single `retrieval is ...` line, so
+managers and drivers emit no progress event restating either. The CLI's
+`ConsoleReporter` shows `WARNING` always, `INFO` with `-v`, and `DETAIL` with
+`-vv` (with elapsed time), throttles counters, and writes to stderr.
+
+**Logging** is developer-facing stdlib `logging` with `getLogger(__name__)` in
+every module; `bgmeter` and `bgmeter_microtech` install only a `NullHandler`.
+ERROR: a failure the layer absorbs instead of raising. WARNING: a recoverable
+problem. INFO: milestones, never glucose values or serial numbers. DEBUG:
+byte-level detail (GATT reads/writes, requests, notifications as hex, per-reply
+verdicts). A layer never logs an exception it re-raises; the CLI logs the final
+failure once (an ERROR line plus a DEBUG traceback). Log text is technical and
+never restates a progress sentence. The CLI attaches one sink to the root logger:
+the terminal by default, or the `--log-file` exclusively, at `--log-level`
+(default `error`), and restores the logger afterwards.
+
 ## Failure and completeness model
 
 The accepted `ReadResult.completion` value has three states:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
@@ -14,6 +15,8 @@ from .framing import (
     reassemble_transport_fragments,
 )
 from .records import CapturedHistoryRecord, find_history_records
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -169,6 +172,20 @@ class HistoryRecordCollector:
         return all(index in self._records for index in range(1, self.expected_count + 1))
 
     @property
+    def transmission_count(self) -> int:
+        return len(self._transmissions)
+
+    @property
+    def record_count(self) -> int:
+        return len(self._records)
+
+    def attributions_since(self, start: int) -> tuple[str, ...]:
+        """Return the attribution of every transmission appended from ``start`` on."""
+        return tuple(
+            transmission.attribution for transmission in self._transmissions[start:]
+        )
+
+    @property
     def cleanup_evidence(self) -> Mapping[str, str] | None:
         if self._cleanup_evidence is None:
             return None
@@ -259,6 +276,16 @@ class HistoryRecordCollector:
         )
         if attribution.startswith("rejected_") or attribution == "duplicate_conflict":
             self.rejected_transmission_count += 1
+        _log.debug(
+            "transmission attribution=%s sequence=%s fragments=%d response_bytes=%s "
+            "requested_index=%s record_indexes=%s",
+            attribution,
+            transport_sequence,
+            len(fragments),
+            len(response) if response is not None else None,
+            matched_request.event_index if matched_request is not None else None,
+            [record.event_index for record in records],
+        )
 
     def _reject_pending(self, sequence: int, attribution: str) -> None:
         pending = self._pending.pop(sequence)

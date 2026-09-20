@@ -176,6 +176,16 @@ bgmeter drivers list --registered
 bgmeter read --help
 ```
 
+When a read misbehaves, ask the program to explain itself. `-vv` narrates each
+step in plain language, and a debug log captures the technical evidence:
+
+```powershell
+bgmeter -vv read --device ble:AA-BB-CC-DD-EE-FF --log-file bgmeter.log --log-level debug
+```
+
+Debug logs contain raw meter bytes (including glucose values); review them
+before sharing. See [cli/README.md](cli/README.md) for the full option list.
+
 Normal tests use saved captures and fake GATT transport; they do not need a
 meter. The live hardware test is deliberately opt-in and should only be run
 when a supported meter is powered on and advertising:

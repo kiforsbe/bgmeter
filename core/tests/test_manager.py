@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,6 +21,7 @@ from bgmeter import (
     MeterIdentity,
     MeterManager,
     MeterTransport,
+    ProgressLevel,
     ReadOptions,
     ReadResult,
     TransportEndpoint,
@@ -77,6 +79,7 @@ class FakeDriver:
         self.match_calls = []
         self.probe_sessions = []
         self.read_sessions = []
+        self.read_options = []
         self.read_gate = read_gate
 
     def match_candidate(self, endpoint):
@@ -89,6 +92,7 @@ class FakeDriver:
 
     async def read_records(self, session, device, options):
         self.read_sessions.append(session)
+        self.read_options.append(options)
         if self.read_gate is not None:
             await self.read_gate.wait()
         instant = datetime(2026, 9, 18, tzinfo=UTC)
@@ -122,12 +126,15 @@ def make_device(*, transport="fake"):
     )
 
 
-def make_manager(driver=None, transport=None):
+def make_manager(driver=None, transport=None, progress=None):
     driver = driver or FakeDriver()
     transport = transport or FakeTransport((make_endpoint(),))
     registry = DriverRegistry()
     registry.register(lambda: driver, source="test")
-    return MeterManager(registry=registry, transports=(transport,)), driver, transport
+    manager = MeterManager(
+        registry=registry, transports=(transport,), progress=progress
+    )
+    return manager, driver, transport
 
 
 class FakeScanner:
@@ -621,3 +628,282 @@ def test_core_source_has_no_meter_specific_knowledge():
     for source_file in source_root.rglob("*.py"):
         source = source_file.read_text(encoding="utf-8").casefold()
         assert not meter_specific_markers(source), f"protocol knowledge in {source_file}"
+
+
+
+def _summary(events):
+    return [(event.level, event.message) for event in events]
+
+
+@pytest.mark.asyncio
+async def test_discover_reports_plain_language_progress():
+    events = []
+    manager, _, _ = make_manager(progress=events.append)
+
+    await manager.discover(timeout=2.0)
+
+    assert _summary(events) == [
+        (ProgressLevel.INFO, "Looking for meters nearby (2 s)..."),
+        (ProgressLevel.DETAIL, "Found 1 device nearby."),
+        (ProgressLevel.INFO, "Found Meter (device-1)."),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_discover_reports_unmatched_endpoints_as_detail():
+    class NoMatchDriver(FakeDriver):
+        def match_candidate(self, endpoint):
+            return None
+
+    events = []
+    manager, _, _ = make_manager(driver=NoMatchDriver(), progress=events.append)
+
+    with pytest.raises(UnsupportedDeviceError):
+        await manager.discover(timeout=2.0)
+
+    assert _summary(events)[2:] == [
+        (ProgressLevel.DETAIL, "Skipped 'Test meter': not a supported meter."),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_discover_reports_a_failed_probe_as_detail():
+    class ProbeFailsDriver(FakeDriver):
+        async def probe(self, session):
+            raise UnsupportedDeviceError("not ours")
+
+    events = []
+    manager, _, _ = make_manager(driver=ProbeFailsDriver(), progress=events.append)
+
+    with pytest.raises(UnsupportedDeviceError):
+        await manager.discover(timeout=2.0)
+
+    assert _summary(events)[2:] == [
+        (
+            ProgressLevel.DETAIL,
+            "'Test meter' did not respond like a supported meter.",
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_read_reports_connect_completion_and_disconnect():
+    events = []
+    manager, _, _ = make_manager(progress=events.append)
+
+    await manager.read(make_device())
+
+    assert _summary(events) == [
+        (ProgressLevel.INFO, "Connecting to Meter..."),
+        (ProgressLevel.INFO, "Read 0 records. All records were received."),
+        (ProgressLevel.DETAIL, "Disconnecting from the meter."),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_read_options_progress_prefers_the_callers_callback():
+    def manager_callback(event):
+        pass
+
+    def caller_callback(event):
+        pass
+
+    manager, driver, _ = make_manager(progress=manager_callback)
+
+    await manager.read(make_device())
+    await manager.read(make_device(), ReadOptions(progress=caller_callback))
+
+    assert driver.read_options[0].progress is manager_callback
+    assert driver.read_options[1].progress is caller_callback
+
+
+@pytest.mark.asyncio
+async def test_read_without_any_progress_callback_leaves_options_unset():
+    manager, driver, _ = make_manager()
+
+    await manager.read(make_device())
+
+    assert driver.read_options[0].progress is None
+
+
+@pytest.mark.asyncio
+async def test_a_failing_progress_callback_does_not_break_operations():
+    def broken(event):
+        raise RuntimeError("reporter exploded")
+
+    manager, _, _ = make_manager(progress=broken)
+
+    devices = await manager.discover(timeout=0.0)
+    result = await manager.read(devices[0])
+
+    assert result.completion is CompletionStatus.COMPLETE
+
+
+class BrokenPoint:
+    name = "broken"
+    value = "broken:factory"
+    dist = None
+
+    def load(self):
+        raise ImportError("no module named broken")
+
+
+class FailingCloseSession(FakeSession):
+    async def close(self):
+        raise OSError("close exploded")
+
+
+class FailingCloseTransport(FakeTransport):
+    async def connect(self, endpoint):
+        session = FailingCloseSession(endpoint)
+        self.sessions.append(session)
+        return session
+
+
+class LoggingClient:
+    services = []
+
+    async def connect(self):
+        pass
+
+    async def disconnect(self):
+        pass
+
+    async def write_gatt_char(self, characteristic, data, response=None):
+        pass
+
+    async def read_gatt_char(self, characteristic):
+        return bytearray(b"\xaa\xbb")
+
+
+def test_bgmeter_package_logger_has_a_null_handler():
+    handlers = logging.getLogger("bgmeter").handlers
+
+    assert any(isinstance(handler, logging.NullHandler) for handler in handlers)
+
+
+@pytest.mark.asyncio
+async def test_manager_logs_discovery_and_read_milestones_at_info(caplog):
+    manager, _, _ = make_manager()
+
+    with caplog.at_level(logging.INFO, logger="bgmeter"):
+        devices = await manager.discover(timeout=0.0)
+        await manager.read(devices[0])
+
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "bgmeter.manager"
+    ]
+    assert any(message.startswith("discovery started") for message in messages)
+    assert any("identified" in message and "driver=fake" in message for message in messages)
+    assert any(message.startswith("opening fake:device-1") for message in messages)
+    assert any(
+        message.startswith("read finished") and "completion=complete" in message
+        for message in messages
+    )
+
+
+@pytest.mark.asyncio
+async def test_probe_rejection_is_a_warning_not_an_error(caplog):
+    class ProbeFailsDriver(FakeDriver):
+        async def probe(self, session):
+            raise UnsupportedDeviceError("not ours")
+
+    manager, _, _ = make_manager(driver=ProbeFailsDriver())
+
+    with caplog.at_level(logging.DEBUG, logger="bgmeter"):
+        with pytest.raises(UnsupportedDeviceError):
+            await manager.discover(timeout=0.0)
+
+    warnings = [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING and record.name == "bgmeter.manager"
+    ]
+    assert len(warnings) == 1
+    assert "rejected endpoint" in warnings[0].getMessage()
+    assert not [record for record in caplog.records if record.levelno >= logging.ERROR]
+
+
+@pytest.mark.asyncio
+async def test_absorbed_session_cleanup_failure_is_logged_at_error(caplog):
+    manager, _, _ = make_manager(
+        transport=FailingCloseTransport((make_endpoint(),))
+    )
+
+    with caplog.at_level(logging.ERROR, logger="bgmeter"):
+        with pytest.raises(RuntimeError, match="body failed"):
+            async with manager.open(make_device()):
+                raise RuntimeError("body failed")
+
+    [record] = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert record.name == "bgmeter.manager"
+    assert "OSError" in record.getMessage()
+    assert "close exploded" in record.getMessage()
+
+
+def test_registry_logs_an_absorbed_entry_point_failure_at_error(monkeypatch, caplog):
+    registry = DriverRegistry()
+    monkeypatch.setattr(
+        DriverRegistry, "available_entry_points", lambda self: (BrokenPoint(),)
+    )
+
+    with caplog.at_level(logging.ERROR, logger="bgmeter"):
+        _, errors = registry.register_available_entry_points()
+
+    assert errors == {"broken": "no module named broken"}
+    [record] = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert record.name == "bgmeter.drivers"
+    assert "broken" in record.getMessage()
+    assert "ImportError" in record.getMessage()
+
+
+@pytest.mark.asyncio
+async def test_ble_transport_logs_scan_and_advertisements(caplog):
+    device = SimpleNamespace(address="AA:BB", name="Backend name")
+    advertisement = SimpleNamespace(
+        local_name="Advertised meter",
+        service_uuids=["1808"],
+        manufacturer_data={},
+        service_data={},
+        tx_power=None,
+        rssi=-51,
+    )
+    scanner = FakeScanner({device.address: (device, advertisement)})
+
+    with caplog.at_level(logging.DEBUG, logger="bgmeter"):
+        await BleTransport(scanner_factory=lambda: scanner).discover(timeout=0)
+
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == "bgmeter.transports.bleak"
+    ]
+    assert any(message.startswith("BLE scan started") for message in messages)
+    assert any("AA:BB" in message and "Advertised meter" in message for message in messages)
+    assert any(message.startswith("BLE scan finished: 1 endpoint") for message in messages)
+
+
+@pytest.mark.asyncio
+async def test_ble_session_logs_gatt_bytes_at_debug_only(caplog):
+    transport = BleTransport(client_factory=lambda target: LoggingClient())
+    session = await transport.connect(make_endpoint(transport="ble"))
+
+    with caplog.at_level(logging.INFO, logger="bgmeter"):
+        await session.write_gatt_char("ffe1", b"\x01\x02", response=False)
+        await session.read_gatt_char("2a24")
+    assert not [
+        record
+        for record in caplog.records
+        if record.name == "bgmeter.transports.bleak"
+        and ("01 02" in record.getMessage() or "aa bb" in record.getMessage())
+    ]
+
+    caplog.clear()
+    with caplog.at_level(logging.DEBUG, logger="bgmeter"):
+        await session.write_gatt_char("ffe1", b"\x01\x02", response=False)
+        await session.read_gatt_char("2a24")
+    text = " ".join(record.getMessage() for record in caplog.records)
+    assert "01 02" in text
+    assert "aa bb" in text

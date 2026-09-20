@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from importlib import metadata
 from inspect import iscoroutinefunction
 import json
+import logging
 from typing import Callable, Protocol, runtime_checkable
 
 from .models import (
@@ -19,6 +20,7 @@ from .models import (
 )
 from .transports import TransportSession
 
+_log = logging.getLogger(__name__)
 
 DRIVER_API_VERSION = 1
 ENTRY_POINT_GROUP = "bgmeter.drivers"
@@ -108,6 +110,7 @@ class DriverRegistry:
         )
         self._factories[driver.driver_id] = factory
         self._descriptors[driver.driver_id] = descriptor
+        _log.debug("registered driver %s (source=%s)", driver.driver_id, source)
         return descriptor
 
     def unregister(self, driver_id: str) -> DriverDescriptor:
@@ -148,6 +151,17 @@ class DriverRegistry:
             try:
                 descriptors.append(self._register_loaded_entry_point(point))
             except Exception as error:
+                _log.error(
+                    "driver entry point %r failed to load: %s: %s",
+                    point.name,
+                    type(error).__name__,
+                    error,
+                )
+                _log.debug(
+                    "driver entry point %r load failure traceback",
+                    point.name,
+                    exc_info=True,
+                )
                 key = point.name
                 if counts[key] > 1:
                     package_name, package_version = self._package_identity(point)

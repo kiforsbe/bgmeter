@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncIterator, Iterable
 from contextlib import asynccontextmanager
 from dataclasses import replace
@@ -16,11 +17,26 @@ from .errors import (
     UnsupportedDeviceError,
 )
 from .models import CompletionStatus, MeterDevice, ReadOptions, ReadResult, TransportEndpoint
+from .progress import ProgressCallback, ProgressEvent, ProgressLevel, emit_progress
 from .transports import BleTransport, MeterTransport, TransportSession
+
+_log = logging.getLogger(__name__)
 
 
 class _SessionCloseError(MeterConnectionError):
     """Distinguish cleanup-only failures from errors raised by the body."""
+
+
+def _plural(count: int, noun: str) -> str:
+    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
+
+
+def _endpoint_label(endpoint: TransportEndpoint) -> str:
+    return endpoint.name or endpoint.identifier
+
+
+def _device_label(device: MeterDevice) -> str:
+    return device.identity.model or _endpoint_label(device.endpoint)
 
 
 @asynccontextmanager
@@ -31,6 +47,12 @@ async def _session_scope(session: TransportSession) -> AsyncIterator[None]:
         try:
             await session.close()
         except BaseException as cleanup:
+            _log.error(
+                "session cleanup failed after %s: %s: %s",
+                type(primary).__name__,
+                type(cleanup).__name__,
+                cleanup,
+            )
             primary.add_note(f"Session cleanup also failed: {type(cleanup).__name__}: {cleanup}")
         raise
     else:
@@ -48,17 +70,39 @@ class ConnectedMeter:
         device: MeterDevice,
         driver: MeterDriver,
         session: TransportSession,
+        progress: ProgressCallback | None = None,
     ) -> None:
         self.device = device
         self._driver = driver
         self._session = session
+        self._progress = progress
 
     async def read_records(self, options: ReadOptions | None = None) -> ReadResult:
-        return await self._driver.read_records(
-            self._session,
-            self.device,
-            options or ReadOptions(),
+        options = options or ReadOptions()
+        if options.progress is None and self._progress is not None:
+            options = replace(options, progress=self._progress)
+        result = await self._driver.read_records(self._session, self.device, options)
+        _log.info(
+            "read finished: device=%s completion=%s received=%d expected=%s "
+            "retries=%d rejected=%d termination=%s",
+            self.device.selector,
+            result.completion.value,
+            len(result.records),
+            result.expected_count,
+            result.retry_count,
+            result.rejected_count,
+            result.termination_reason,
         )
+        if result.completion is CompletionStatus.COMPLETE:
+            emit_progress(
+                options.progress,
+                ProgressEvent(
+                    ProgressLevel.INFO,
+                    f"Read {_plural(len(result.records), 'record')}. "
+                    "All records were received.",
+                ),
+            )
+        return result
 
 
 class MeterManager:
@@ -69,9 +113,11 @@ class MeterManager:
         *,
         registry: DriverRegistry,
         transports: Iterable[MeterTransport],
+        progress: ProgressCallback | None = None,
     ) -> None:
         self.registry = registry
         self.transports = tuple(transports)
+        self._progress = progress
         self._transports_by_name: dict[str, MeterTransport] = {}
         for transport in self.transports:
             if transport.name in self._transports_by_name:
@@ -79,15 +125,24 @@ class MeterManager:
             self._transports_by_name[transport.name] = transport
 
     @classmethod
-    def default(cls) -> MeterManager:
+    def default(cls, *, progress: ProgressCallback | None = None) -> MeterManager:
         registry = DriverRegistry()
         registry.register_available_entry_points()
-        return cls(registry=registry, transports=(BleTransport(),))
+        return cls(registry=registry, transports=(BleTransport(),), progress=progress)
+
+    def _say(self, level: ProgressLevel, message: str) -> None:
+        emit_progress(self._progress, ProgressEvent(level, message))
 
     async def discover(self, *, timeout: float = 5.0) -> tuple[MeterDevice, ...]:
         devices: list[MeterDevice] = []
         endpoint_found = False
         descriptors = self.registry.descriptors()
+        _log.info(
+            "discovery started: transports=%s drivers=%s timeout=%.1fs",
+            [transport.name for transport in self.transports],
+            [descriptor.driver_id for descriptor in descriptors],
+            timeout,
+        )
 
         for transport in self.transports:
             drivers = tuple(
@@ -95,13 +150,24 @@ class MeterManager:
                 for descriptor in descriptors
                 if transport.name in descriptor.supported_transports
             )
+            self._say(
+                ProgressLevel.INFO, f"Looking for meters nearby ({timeout:g} s)..."
+            )
             endpoints = await transport.discover(timeout=timeout)
+            self._say(
+                ProgressLevel.DETAIL,
+                f"Found {_plural(len(endpoints), 'device')} nearby.",
+            )
             endpoint_found = endpoint_found or bool(endpoints)
+            _log.info(
+                "transport %s discovered %d endpoint(s)", transport.name, len(endpoints)
+            )
             for endpoint in endpoints:
                 device = await self._identify_endpoint(transport, endpoint, drivers)
                 if device is not None:
                     devices.append(device)
 
+        _log.info("discovery finished: %d supported device(s)", len(devices))
         if devices:
             return tuple(devices)
         if endpoint_found:
@@ -122,9 +188,21 @@ class MeterManager:
             if (match := driver.match_candidate(endpoint)) is not None
         )
         if not matches:
+            _log.debug(
+                "endpoint %s (%r) matched no driver", endpoint.identifier, endpoint.name
+            )
+            self._say(
+                ProgressLevel.DETAIL,
+                f"Skipped '{_endpoint_label(endpoint)}': not a supported meter.",
+            )
             return None
 
         selector = f"{endpoint.transport}:{endpoint.identifier}"
+        _log.debug(
+            "endpoint %s candidates: %s",
+            selector,
+            [(driver.driver_id, match.confidence, match.evidence) for driver, match in matches],
+        )
         confidences = sorted(
             {match.confidence for _, match in matches},
             reverse=True,
@@ -148,8 +226,30 @@ class MeterManager:
             async with _session_scope(session):
                 try:
                     identity = await driver.probe(session)
-                except UnsupportedDeviceError:
+                except UnsupportedDeviceError as error:
+                    _log.warning(
+                        "driver %s probe rejected endpoint %s: %s",
+                        driver.driver_id,
+                        selector,
+                        error,
+                    )
+                    self._say(
+                        ProgressLevel.DETAIL,
+                        f"'{_endpoint_label(endpoint)}' did not respond like a "
+                        "supported meter.",
+                    )
                     continue
+            self._say(
+                ProgressLevel.INFO,
+                f"Found {identity.model or _endpoint_label(endpoint)} "
+                f"({endpoint.identifier}).",
+            )
+            _log.info(
+                "endpoint %s identified: driver=%s model=%s",
+                selector,
+                driver.driver_id,
+                identity.model,
+            )
             return MeterDevice(
                 selector=selector,
                 driver_id=driver.driver_id,
@@ -178,9 +278,15 @@ class MeterManager:
                 f"{device.endpoint.transport!r}"
             )
 
+        _log.info("opening %s with driver %s", device.selector, device.driver_id)
+        self._say(ProgressLevel.INFO, f"Connecting to {_device_label(device)}...")
         session = await self._connect(transport, device.endpoint)
         async with _session_scope(session):
-            yield ConnectedMeter(device, driver, session)
+            try:
+                yield ConnectedMeter(device, driver, session, self._progress)
+            finally:
+                _log.debug("closing session for %s", device.selector)
+                self._say(ProgressLevel.DETAIL, "Disconnecting from the meter.")
 
     async def read(
         self,
@@ -194,6 +300,12 @@ class MeterManager:
         except _SessionCloseError as error:
             if result is None or not result.records:
                 raise
+            _log.error(
+                "disconnect failed after a read that returned %d record(s); "
+                "returning a partial result: %s",
+                len(result.records),
+                error,
+            )
             cause = error.__cause__
             return replace(
                 result,
@@ -219,6 +331,7 @@ class MeterManager:
         transport: MeterTransport,
         endpoint: TransportEndpoint,
     ) -> TransportSession:
+        _log.debug("connecting: transport=%s endpoint=%s", transport.name, endpoint.identifier)
         try:
             return await transport.connect(endpoint)
         except asyncio.CancelledError:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 from datetime import datetime
+import logging
 import re
 from collections import Counter
 from collections.abc import Callable
@@ -18,6 +19,8 @@ from bgmeter import (
     GattService,
     MeterDevice,
     MeterIdentity,
+    MeterTimeoutError,
+    ProgressLevel,
     ReadOptions,
     TransportEndpoint,
     UnsupportedDeviceError,
@@ -508,3 +511,90 @@ def test_package_root_exports_only_supported_driver_api() -> None:
         "MicroTechBgmDriver",
         "driver_factory",
     ]
+
+
+@pytest.mark.asyncio
+async def test_no_usable_records_reports_one_plain_error_and_no_warning_events() -> None:
+    events = []
+    driver = driver_factory()
+    endpoint = _endpoint()
+    session = CaptureGattSession(endpoint)
+
+    with pytest.raises(MeterTimeoutError) as caught:
+        await driver.read_records(
+            session,
+            _device(endpoint, driver),
+            ReadOptions(request_timeout=0.001, progress=events.append),
+        )
+
+    assert str(caught.value) == "The meter connected but did not send any usable records."
+    assert [event.message for event in events] == [
+        "Asking the meter how many records it holds.",
+        "The meter did not send a usable reply; trying again (2 of 3).",
+        "The meter did not send a usable reply; trying again (3 of 3).",
+        "Gave up asking the meter for its latest record after 3 tries.",
+    ]
+    assert all(event.level is not ProgressLevel.WARNING for event in events)
+
+
+@pytest.mark.asyncio
+async def test_capture_read_forwards_progress_to_the_history_reader() -> None:
+    events = []
+    driver = driver_factory()
+    endpoint = _endpoint()
+    session = CaptureGattSession(endpoint, notifications=_capture_notifications())
+
+    await driver.read_records(
+        session,
+        _device(endpoint, driver),
+        ReadOptions(request_timeout=0.001, progress=events.append),
+    )
+
+    assert (events[-1].current, events[-1].total) == (4, 4)
+    assert all(event.level is not ProgressLevel.WARNING for event in events)
+
+
+def test_microtech_package_logger_has_a_null_handler() -> None:
+    handlers = logging.getLogger("bgmeter_microtech").handlers
+
+    assert any(isinstance(handler, logging.NullHandler) for handler in handlers)
+
+
+@pytest.mark.asyncio
+async def test_info_logging_never_contains_serials_or_glucose_data(caplog) -> None:
+    driver = driver_factory()
+    endpoint = _endpoint()
+    session = CaptureGattSession(endpoint, notifications=_capture_notifications())
+
+    with caplog.at_level(logging.INFO, logger="bgmeter_microtech"):
+        await driver.probe(session)
+        await driver.read_records(
+            session,
+            _device(endpoint, driver),
+            ReadOptions(request_timeout=0.001),
+        )
+
+    assert "read_records finished: completion=complete records=4" in caplog.text
+    assert "Z00MCF" not in caplog.text
+    assert "10 13 0a 10 1b" not in caplog.text
+    assert "7.44" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_no_usable_records_leaves_technical_evidence_in_the_log(caplog) -> None:
+    driver = driver_factory()
+    endpoint = _endpoint()
+    session = CaptureGattSession(endpoint)
+
+    with caplog.at_level(logging.INFO, logger="bgmeter_microtech"):
+        with pytest.raises(MeterTimeoutError):
+            await driver.read_records(
+                session,
+                _device(endpoint, driver),
+                ReadOptions(request_timeout=0.001),
+            )
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(m.startswith("history read finished: records=0") for m in messages)
+    assert any("notifications=0" in m for m in messages)
+    assert "The meter connected but did not send any usable records." not in caplog.text

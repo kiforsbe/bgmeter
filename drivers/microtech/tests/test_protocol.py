@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -614,3 +615,174 @@ async def test_primary_failure_survives_unsubscribe_failure(primary_type) -> Non
         )
 
     assert "unsubscribe failed" in caught.value.__notes__[-1]
+
+
+def _progress_summary(events):
+    return [(event.level.value, event.message) for event in events]
+
+
+@pytest.mark.asyncio
+async def test_read_history_reports_each_accepted_record() -> None:
+    events = []
+    session = FakeGattSession({index: [_indexed_frames(index)] for index in range(4)})
+
+    await read_history(
+        session, "ffe1", request_timeout=0.001, retries=1, progress=events.append
+    )
+
+    assert _progress_summary(events) == [
+        ("detail", "Asking the meter how many records it holds."),
+        ("info", "Reading records: 1 of 4"),
+        ("info", "Reading records: 2 of 4"),
+        ("info", "Reading records: 3 of 4"),
+        ("info", "Reading records: 4 of 4"),
+    ]
+    assert [(event.current, event.total) for event in events[1:]] == [
+        (1, 4),
+        (2, 4),
+        (3, 4),
+        (4, 4),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_read_history_reports_retries_and_giving_up() -> None:
+    events = []
+    session = FakeGattSession(
+        {0: [_frames(0)], 1: [_frames(1)], 2: [None, None], 3: [_frames(3)]}
+    )
+
+    await read_history(
+        session, "ffe1", request_timeout=0.001, retries=2, progress=events.append
+    )
+
+    assert _progress_summary(events) == [
+        ("detail", "Asking the meter how many records it holds."),
+        ("info", "Reading records: 1 of 4"),
+        ("info", "Reading records: 2 of 4"),
+        ("info", "The meter did not send a usable reply; trying again (2 of 2)."),
+        ("detail", "Gave up on record 2 after 2 tries and moved on."),
+        ("info", "Reading records: 3 of 4"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_read_history_explains_a_rejected_reply_in_plain_words() -> None:
+    events = []
+    wrong_event = tuple(
+        bytes.fromhex(value) for value in WRONG_EVENT_THREE_FOR_REQUEST_TWO
+    )
+    session = FakeGattSession(
+        {0: [_frames(0)], 1: [_frames(1)], 2: [wrong_event], 3: [_frames(3)]}
+    )
+
+    await read_history(
+        session, "ffe1", request_timeout=0.001, retries=1, progress=events.append
+    )
+
+    assert _progress_summary(events) == [
+        ("detail", "Asking the meter how many records it holds."),
+        ("info", "Reading records: 1 of 4"),
+        ("info", "Reading records: 2 of 4"),
+        (
+            "detail",
+            "Ignored a reply for a different record than the one we asked for.",
+        ),
+        ("detail", "Gave up on record 2 after 1 try and moved on."),
+        ("info", "Reading records: 3 of 4"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_read_history_reports_giving_up_on_the_latest_record() -> None:
+    events = []
+    session = FakeGattSession({0: [None, None, None]})
+
+    await read_history(
+        session, "ffe1", request_timeout=0.001, retries=3, progress=events.append
+    )
+
+    assert _progress_summary(events) == [
+        ("detail", "Asking the meter how many records it holds."),
+        ("info", "The meter did not send a usable reply; trying again (2 of 3)."),
+        ("info", "The meter did not send a usable reply; trying again (3 of 3)."),
+        ("detail", "Gave up asking the meter for its latest record after 3 tries."),
+    ]
+
+
+def test_collector_exposes_transmission_and_record_counters() -> None:
+    collector = HistoryRecordCollector()
+
+    assert collector.transmission_count == 0
+    assert collector.record_count == 0
+    for fragment in _frames(2):
+        collector.add_notification(fragment)
+
+    assert collector.record_count == 1
+    assert collector.transmission_count == 1
+    assert collector.attributions_since(0) == ("accepted",)
+    assert collector.attributions_since(1) == ()
+
+
+def test_progress_is_optional_for_read_history_callers() -> None:
+    import inspect
+
+    assert inspect.signature(read_history).parameters["progress"].default is None
+
+
+@pytest.mark.asyncio
+async def test_read_history_logs_requests_notifications_and_verdicts_at_debug(caplog) -> None:
+    session = FakeGattSession({index: [_indexed_frames(index)] for index in range(4)})
+
+    with caplog.at_level(logging.DEBUG, logger="bgmeter_microtech"):
+        await read_history(session, "ffe1", request_timeout=0.001, retries=1)
+
+    protocol = [
+        r.getMessage() for r in caplog.records if r.name == "bgmeter_microtech.protocol"
+    ]
+    collector = [
+        r.getMessage() for r in caplog.records if r.name == "bgmeter_microtech.collector"
+    ]
+    assert any(m.startswith("request event_index=0 attempt=1/1") for m in protocol)
+    assert any(_indexed_frames(0)[2].hex(" ") in m for m in protocol)
+    assert sum("attribution=accepted" in m for m in collector) == 4
+    assert any(m.startswith("history read finished: records=4") for m in protocol)
+
+
+@pytest.mark.asyncio
+async def test_read_history_logs_exhausted_retries_and_rejections_at_warning(caplog) -> None:
+    wrong_event = tuple(
+        bytes.fromhex(value) for value in WRONG_EVENT_THREE_FOR_REQUEST_TWO
+    )
+    session = FakeGattSession(
+        {0: [_frames(0)], 1: [_frames(1)], 2: [wrong_event], 3: [_frames(3)]}
+    )
+
+    with caplog.at_level(logging.WARNING, logger="bgmeter_microtech"):
+        await read_history(session, "ffe1", request_timeout=0.001, retries=1)
+
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert any(m.startswith("request event_index=2 unanswered after 1 attempt(s)") for m in warnings)
+    assert any(
+        m.startswith("history read rejected 1 transmission(s)")
+        and "rejected_wrong_event" in m
+        for m in warnings
+    )
+
+
+@pytest.mark.asyncio
+async def test_read_history_logs_absorbed_unsubscribe_failure_at_error(caplog) -> None:
+    class FailingStopSession(FakeGattSession):
+        async def stop_notify(self, characteristic: str) -> None:
+            await super().stop_notify(characteristic)
+            raise RuntimeError("unsubscribe failed")
+
+    session = FailingStopSession({index: [_indexed_frames(index)] for index in range(4)})
+
+    with caplog.at_level(logging.ERROR, logger="bgmeter_microtech"):
+        await read_history(session, "ffe1", request_timeout=0.01, retries=1)
+
+    [record] = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert record.name == "bgmeter_microtech.protocol"
+    assert "RuntimeError" in record.getMessage()
+    assert "unsubscribe failed" in record.getMessage()

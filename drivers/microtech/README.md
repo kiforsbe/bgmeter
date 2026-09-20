@@ -68,6 +68,18 @@ captured fragment, reconstructed response, and native record byte. Treat this
 raw material as sensitive. A request is left `None` when an offline capture
 cannot reliably associate one with a record.
 
+## Progress and logging
+
+The driver reports plain-language progress through `ReadOptions.progress`
+("Reading records: 12 of 57", retries, and, at detail level, replies it ignored
+and why). It logs technical detail under `bgmeter_microtech.protocol`,
+`.collector`, and `.driver`: DEBUG has every request, every notification as hex,
+and the accept or reject verdict for each reply; INFO has counts only, never
+glucose values or serial numbers; WARNING summarizes exhausted retries and
+rejected replies. The package installs only a `NullHandler`. When a read returns
+no usable record, the `bgmeter_microtech.protocol` log (`--log-level warning`
+or lower on the CLI) shows what the meter sent and why each reply was rejected.
+
 ## Protocol and capture boundary
 
 Framing, checksums, command `0x05`, indexed history retrieval, and the native
