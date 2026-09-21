@@ -15,8 +15,9 @@ All notable changes to this project are documented in this file.
 
 ### Changed
 
-- The MicroTech driver now walks history from the newest record backwards. An
-  interrupted read therefore retains the newest records rather than the oldest.
+- The MicroTech driver now walks history from the newest record backwards. A read
+  cut short by an unresponsive meter therefore keeps the newest records rather
+  than the oldest, and raw wire evidence is now ordered newest-first.
 
 ## [0.2.0] - 2026-09-20
 

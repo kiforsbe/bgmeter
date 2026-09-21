@@ -111,8 +111,9 @@ down, unconditionally — including for unlimited reads.
 
 Descending is the only order in which an early stop is meaningful, and making
 it unconditional avoids carrying two walk directions. It also improves the
-failure mode of a full read: an interrupted read now retains the newest
-records rather than the oldest.
+failure mode of a full read: a read cut short by an unresponsive meter now
+keeps the newest records rather than the oldest. A read aborted by an exception
+or cancellation still returns nothing.
 
 This changes the order of raw wire evidence for full reads. Final output
 ordering is unaffected: `HistoryRecordCollector.records` already sorts by meter

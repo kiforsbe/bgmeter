@@ -415,9 +415,9 @@ sequenceDiagram
     M->>S: close()
     alt close succeeds
         M-->>Caller: ReadResult
-    else close fails and result has records
+    else close fails after the driver returned a result
         M-->>Caller: ReadResult, PARTIAL, termination_reason disconnect_failed
-    else close fails and no records
+    else close fails and there is no result
         M-->>Caller: raise MeterConnectionError
     end
 ```
@@ -941,9 +941,9 @@ machine-readable stdout stays clean.
 
 A partial or unknown retrieval still exports the records obtained, marks the
 result incomplete, and returns status `5`. A truncated retrieval exports the
-records obtained and returns `0` with no warning; the manager announces it with
-one progress line, either "No new records." or "Read N records. Older records
-were not requested."
+records obtained and returns `0` with no warning; `ConnectedMeter` announces it
+with one INFO-level progress line, shown only with `-v`, either "No new records."
+or "Read N records. Older records were not read."
 
 `--newest N` asks the driver for at most the N most recent records; a value below
 1 is a usage error (status `2`). `--new-only` reads the measurement database
@@ -958,8 +958,10 @@ starts. Because the walk stops at the first known record, `--new-only` does not
 fill gaps left by an earlier interrupted read; a full read does. If the meter
 reports fewer records than the highest sequence in the database, the command
 warns on stderr that the meter's history appears to have been reset or cleared
-and hints to run a full read, without changing the exit status. The two flags can
-be combined.
+and hints to run a full read, without changing the exit status. That guard is a
+heuristic: it compares the meter's reported count with the highest stored
+sequence, so it can only detect a meter that now reports fewer records than were
+previously stored. The two flags can be combined.
 
 ### Driver registration in the CLI
 
@@ -1024,7 +1026,9 @@ currently 1), connection lifecycle, and single write transaction. Records are
 deduplicated solely by the public driver-scoped `record_id`. Raw captures, driver
 metadata, and diagnostics stay in the JSON export and are not stored. The store
 moves a database from the former platform-default location into the current one on
-first use.
+the first write. `device_state()` is read-only: it never creates the file, never
+migrates the legacy path, and raises `StoreError` on an unsupported or zero-byte
+database.
 
 ```mermaid
 erDiagram
@@ -1132,7 +1136,7 @@ flowchart TD
     all -->|yes| full{"targets cover the whole history 1..N?"}
     full -->|yes| ok["COMPLETE<br/>termination: history_complete"]
     full -->|no| tr["TRUNCATED<br/>termination: limit_reached or already_stored"]
-    ok --> m{"disconnect fails afterwards<br/>and records exist?"}
+    ok --> m{"disconnect fails afterwards?"}
     tr --> m
     p1 --> m
     u --> m

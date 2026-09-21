@@ -125,6 +125,7 @@ bgmeter devices [--driver DRIVER]
 bgmeter info --device DEVICE [--driver DRIVER]
 bgmeter read [--device DEVICE] [--driver DRIVER] [--timezone ZONE]
              [--output OUTPUT]... [--show-raw] [--store] [--force]
+             [--newest N] [--new-only]
 bgmeter drivers list [--available|--registered]
 bgmeter drivers info DRIVER
 bgmeter drivers register DRIVER
@@ -149,6 +150,8 @@ empty.
 ## CLI measurement database
 
 `bgmeter read` does not persist records unless the caller passes `--store`.
+`--new-only` only reads the database (`MeasurementStore.device_state()`, which
+never creates or migrates it) to learn which records the meter already has.
 With that flag, the CLI-private `MeasurementStore` stores valid records before
 rendering or publishing requested output. It owns the unencrypted database at
 `platformdirs.user_data_path("bgmeter", appauthor=False) / "measurements.sqlite3"`
@@ -182,11 +185,11 @@ Exit statuses are:
 
 | Status | Meaning |
 | ---: | --- |
-| 0 | Complete success |
+| 0 | Complete or truncated success |
 | 2 | Usage error or ambiguous selection |
 | 3 | No supported meter |
 | 4 | Connection or transport failure |
-| 5 | Protocol failure or non-complete retrieval |
+| 5 | Protocol failure or partial/unknown retrieval |
 | 6 | Export or configuration-write failure |
 | 130 | Interrupted operation |
 

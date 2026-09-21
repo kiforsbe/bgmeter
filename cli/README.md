@@ -8,6 +8,8 @@ which is discovered through the public `bgmeter.drivers` entry-point group.
 bgmeter devices
 bgmeter info --device ble:AA-BB-CC-DD-EE-FF
 bgmeter read --device ble:AA-BB-CC-DD-EE-FF --timezone Europe/Stockholm
+bgmeter read --device ble:AA-BB-CC-DD-EE-FF --newest 20
+bgmeter read --device ble:AA-BB-CC-DD-EE-FF --new-only --store
 bgmeter read --device ble:AA-BB-CC-DD-EE-FF \
   --output terminal --output csv=records.csv --output json=records.json
 bgmeter drivers list --registered
@@ -22,10 +24,15 @@ record, while terminal output is intended for people and is not a stable data
 contract. Data is written to stdout or requested files; errors and selection
 prompts are written to stderr.
 
-Exit statuses are `0` for a complete result, `2` for usage or ambiguous
-selection, `3` for no supported meter, `4` for connection or transport failure,
-`5` for protocol failure or an incomplete retrieval, `6` for export failure,
-and `130` for interruption.
+`--newest N` reads only the N most recent records. `--new-only` stops at the
+first record the local measurement database already holds; it reads the database
+without writing to it. A read shortened by either flag is reported as
+`truncated`.
+
+Exit statuses are `0` for a complete or deliberately truncated result, `2` for
+usage or ambiguous selection, `3` for no supported meter, `4` for connection or
+transport failure, `5` for protocol failure or a partial or unknown retrieval,
+`6` for export failure, and `130` for interruption.
 
 ## Progress and logging
 

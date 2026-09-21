@@ -58,9 +58,9 @@ disconnect fails: it returns `PARTIAL`, appends a warning, and sets
 `termination_reason="disconnect_failed"`. The `bgmeter.cleanup` diagnostics
 entry records the cleanup error type/message and the prior completion,
 termination reason, and any previous diagnostic at that key. Other diagnostics,
-records, and counts are preserved; `ended_at` includes cleanup. An empty result
-followed by disconnect failure raises a typed connection error. The connection
-context itself cannot replace results held by its caller and still raises on a
+records, and counts are preserved; `ended_at` includes cleanup. This holds even
+when the result has no records, such as a `TRUNCATED` read with nothing new. The
+connection context itself cannot replace results held by its caller and still raises on a
 cleanup-only failure.
 
 ```python
@@ -172,6 +172,16 @@ example = "example_meter:create_driver"
 The registry validates the driver API version and async contract before the
 manager uses it. Meter protocol knowledge remains in the external driver;
 transports discover endpoints, expose connected services, and transfer bytes.
+
+`ReadResult.completion` is one of four states: `COMPLETE` (the full history was
+received), `PARTIAL` (retrieval ended early or records are known to be missing),
+`UNKNOWN` (records were received but completeness cannot be proven), and
+`TRUNCATED` (every requested record arrived, but the read was deliberately
+shorter than the whole history). `ReadOptions` also carries two optional hints a
+driver may honor: `newest_count` (at least 1) asks for only the most recent
+records, and `known_record_ids` lets the driver stop at the first record the
+caller already holds. A driver that honors them and stops early reports
+`TRUNCATED`; drivers that ignore them keep working.
 
 ## Connected GATT inventory
 

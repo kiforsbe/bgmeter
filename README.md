@@ -150,7 +150,8 @@ first one already stored, so it does not fill gaps left by an earlier
 interrupted read; run a full read for that. It reads the database whether or
 not `--store` is given, so it can preview what is new without recording it. It
 never creates the database, so on a machine with no database it is simply a
-full read. When a flag shortens the read, the result is reported as `truncated`
+full read. If the only database is still at the former doubled path, `--new-only`
+sees an empty store (one full read) until a `--store` read migrates it. When a flag shortens the read, the result is reported as `truncated`
 rather than `complete`, and the command exits 0.
 
 The meter stores a manually set local clock. `--timezone` tells the program how
