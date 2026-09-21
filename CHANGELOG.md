@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- `bgmeter read --newest N` reads only the N most recent records.
+- `bgmeter read --new-only` stops at the first record already in the local
+  measurement database, making a repeated sync nearly free.
+- `CompletionStatus.TRUNCATED` distinguishes a deliberately shortened read from
+  a degraded one. `ReadOptions` gains `newest_count` and `known_record_ids`,
+  both optional hints a driver may honor.
+
+### Changed
+
+- The MicroTech driver now walks history from the newest record backwards. An
+  interrupted read therefore retains the newest records rather than the oldest.
+
 ## [0.2.0] - 2026-09-20
 
 ### Added

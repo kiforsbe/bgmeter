@@ -280,7 +280,12 @@ Identification has two stages:
    meter the driver handles.
 
 `read_records()` accepts `ReadOptions` (timezone, per-request timeout, retry
-count, optional progress callback) and returns a `ReadResult`.
+count, optional progress callback, and two optional read hints) and returns a
+`ReadResult`. The hints are `newest_count`, which asks for at most that many of
+the most recent records, and `known_record_ids`, the record IDs the caller
+already holds, which a driver may use to stop reading at the first one it
+reaches. A driver may honor or ignore either hint; a driver that ignores them
+simply returns the full history.
 
 `DriverRegistry` validates every factory before accepting it: the factory must be
 callable and produce an object with a non-empty string `driver_id` and
@@ -461,6 +466,8 @@ classDiagram
         +timezone str?
         +request_timeout float
         +retries int
+        +newest_count int?
+        +known_record_ids frozenset~str~
         +progress ProgressCallback?
     }
     class ReadResult {
@@ -481,6 +488,7 @@ classDiagram
         COMPLETE
         PARTIAL
         UNKNOWN
+        TRUNCATED
     }
     class GlucoseRecord {
         +record_id str
@@ -549,7 +557,7 @@ bytes. Records in a result are unique by `record_id` and presented in
 measurement-time order. `ReadResult` carries completeness state, counts
 (expected, received, duplicate, rejected, retry), a structured termination reason,
 warnings, and driver diagnostics, so partial retrieval is never mistaken for a
-complete history.
+complete history, and a deliberately shortened read is never mistaken for either.
 
 ## MicroTech driver
 
@@ -582,14 +590,17 @@ classDiagram
     }
     class protocol {
         <<module>>
-        +read_history(session, characteristic, request_timeout, retries, progress) HistoryRecordCollector
+        +read_history(session, characteristic, request_timeout, retries, progress, newest_count, is_known) HistoryRecordCollector
     }
     class HistoryRecordCollector {
         +expected_count int?
         +retry_count int
+        +truncation_reason str?
         +records tuple~CapturedHistoryRecord~
         +status CompletionStatus
         +is_complete bool
+        +missing_indexes tuple~int~
+        +set_target_indexes(indexes)
         +register_request(event_index, request)
         +add_notification(data) tuple~CapturedHistoryRecord~
         +finalize_pending()
@@ -705,11 +716,21 @@ one rather than being merged with it.
 
 ### History retrieval
 
-`read_history()` subscribes to FFE1 notifications, asks for the latest record to
-learn the history length, then requests each missing index in turn. Every request
-is retried up to `retries` times, waiting up to `request_timeout` seconds for the
-predicate to hold. Notification reception is always stopped, on success and on
-error.
+`read_history()` subscribes to FFE1 notifications and asks for the latest record
+to learn the history length N. It then plans which indexes to fetch and requests
+them newest first, from N downwards, rather than from 1 upwards. With no limits
+the targets are N down to 1. `newest_count` raises the lowest target to
+`max(1, N - newest_count + 1)`. The optional `is_known(index)` predicate is asked
+about each candidate index in turn from N downwards, and the plan stops at the
+first index it reports as known: that index and everything older are not
+requested. When the targets are fewer than the whole history the collector
+records why in `truncation_reason`: `limit_reached` when `newest_count` cut the
+plan short, or `already_stored` when a known record did. The driver builds the
+known-record test from `history_record_id(device, event_index)` in
+`bgmeter_microtech.driver`, which is also how normalization forms `record_id`.
+Every request is retried up to `retries` times, waiting up to `request_timeout`
+seconds for the predicate to hold. Notification reception is always stopped, on
+success and on error.
 
 ```mermaid
 stateDiagram-v2
@@ -717,10 +738,12 @@ stateDiagram-v2
     Subscribing --> RequestLatest : start_notify
     RequestLatest --> RequestLatest : no usable reply, retry
     RequestLatest --> NoHistory : retries exhausted
-    RequestLatest --> RequestIndex : reply sets expected_count = N
+    RequestLatest --> PlanTargets : reply sets expected_count = N
+    PlanTargets --> RequestIndex : targets N down to the limit, stopping at a known record
+    PlanTargets --> Unsubscribing : no targets to fetch
     RequestIndex --> RequestIndex : no usable reply, retry
-    RequestIndex --> RequestIndex : next missing index 1..N
-    RequestIndex --> Unsubscribing : all indexes held, or indexes exhausted
+    RequestIndex --> RequestIndex : next target index, descending
+    RequestIndex --> Unsubscribing : all targets held, or targets exhausted
     NoHistory --> Unsubscribing
     Unsubscribing --> Finalizing : stop_notify ok
     Unsubscribing --> Finalizing : stop_notify failed, cleanup evidence recorded
@@ -728,7 +751,11 @@ stateDiagram-v2
 ```
 
 An index that stays unanswered after all retries is skipped, not fatal: the read
-continues and the result reports the missing indexes. Failures that propagate as
+continues and the result reports the missing indexes among those it targeted.
+The collector's `is_complete` means that every targeted index was received, not
+that the whole history was; whether the targets covered the whole history decides
+between `COMPLETE` and `TRUNCATED` (see
+[Completion states](#completion-states)). Failures that propagate as
 exceptions (a failed GATT write, cancellation) abort the read, run cleanup, and
 raise a typed error; records collected so far are not returned in that case.
 
@@ -748,9 +775,14 @@ raise a typed error; records collected so far are not returned in that case.
   transport sequence) go under `driver_data["microtech"]`; and
 - the raw request, fragments, response, and 18-byte record go into `RawCapture`.
 
+Records whose ID is in `ReadOptions.known_record_ids` are dropped before
+normalization, so a read that stopped at a known record returns only what is new
+and `received_count` counts only those records. `expected_count` still reports
+the meter's true total.
+
 The result's `diagnostics` carry `microtech.*` counters, the missing event
-indexes, and the full wire evidence. If the meter connects but yields no usable
-record, the driver raises `MeterTimeoutError`.
+indexes, the truncation reason, and the full wire evidence. If the meter
+connects but yields no usable record, the driver raises `MeterTimeoutError`.
 
 ## Command-line interface
 
@@ -812,10 +844,15 @@ classDiagram
     }
     class MeasurementStore {
         +store(records, stored_at) StoreSummary
+        +device_state(driver_id, device_id) StoredDeviceState
     }
     class StoreSummary {
         +inserted_count int
         +duplicate_count int
+    }
+    class StoredDeviceState {
+        +record_ids frozenset~str~
+        +highest_sequence int?
     }
     class MeterManager {
         <<core>>
@@ -834,6 +871,7 @@ classDiagram
     registry *-- RegistryLoad
     RegistryLoad o-- "0..*" DriverPlugin
     MeasurementStore ..> StoreSummary
+    MeasurementStore ..> StoredDeviceState
     ConsoleReporter ..> MeterManager : ProgressCallback
 ```
 
@@ -845,7 +883,8 @@ bgmeter [-v|-vv] [--log-level LEVEL] [--log-file PATH] COMMAND ...
 bgmeter devices  [--driver DRIVER]
 bgmeter info     --device DEVICE [--driver DRIVER]
 bgmeter read     [--device DEVICE] [--driver DRIVER] [--timezone ZONE]
-                 [--output OUTPUT]... [--show-raw] [--store] [--force]
+                 [--output OUTPUT]... [--show-raw] [--store] [--newest N]
+                 [--new-only] [--force]
 bgmeter drivers list [--available | --registered]
 bgmeter drivers info DRIVER
 bgmeter drivers register DRIVER
@@ -876,13 +915,19 @@ flowchart TD
     all --> disc["asyncio.run:<br/>manager.discover()"]
     disc --> sel["select_device()"]
     sel --> out["Parse --output specs and<br/>check destinations up front<br/>at most one stdout output,<br/>existing files need --force"]
-    out --> rd["manager.read(device, ReadOptions(timezone))"]
-    rd --> st{"--store?"}
+    out --> nw{"--new-only?"}
+    nw -->|yes| ds["MeasurementStore.device_state()<br/>read-only, never creates the database<br/>on failure: status 6"]
+    nw -->|no| rd
+    ds --> rd["manager.read(device,<br/>ReadOptions(timezone, newest_count,<br/>known_record_ids))"]
+    rd --> rs{"--new-only and the meter reports fewer records<br/>than the highest stored sequence?"}
+    rs -->|yes| rw["stderr: history appears reset or cleared,<br/>hint: run a full read"]
+    rs -->|no| st{"--store?"}
+    rw --> st
     st -->|yes| db["MeasurementStore.store()<br/>on failure: no output is published, status 6"]
     st -->|no| rend
     db --> rend["Render every output<br/>in memory first"]
     rend --> pub["Publish: write files atomically,<br/>then write stdout output"]
-    pub --> cmp{"completion COMPLETE?"}
+    pub --> cmp{"completion COMPLETE or TRUNCATED?"}
     cmp -->|yes| ok(["exit 0"])
     cmp -->|no| warn(["stderr: retrieval is partial / unknown<br/>exit 5"])
 ```
@@ -895,7 +940,26 @@ are protected unless `--force` is given. Progress and diagnostics use stderr so
 machine-readable stdout stays clean.
 
 A partial or unknown retrieval still exports the records obtained, marks the
-result incomplete, and returns status `5`.
+result incomplete, and returns status `5`. A truncated retrieval exports the
+records obtained and returns `0` with no warning; the manager announces it with
+one progress line, either "No new records." or "Read N records. Older records
+were not requested."
+
+`--newest N` asks the driver for at most the N most recent records; a value below
+1 is a usage error (status `2`). `--new-only` reads the measurement database
+(`measurements.sqlite3`) before the read to learn which records the selected meter already has:
+`MeasurementStore.device_state()` returns the stored record IDs and the highest
+stored sequence, and the IDs become `ReadOptions.known_record_ids`, so the driver
+stops at the first record it already has. The database is read whether or not
+`--store` is given, so `--new-only` can preview what is new without recording it.
+It never creates the database, so on a machine with none it is a full read, and a
+database that cannot be read fails the command with status `6` before the read
+starts. Because the walk stops at the first known record, `--new-only` does not
+fill gaps left by an earlier interrupted read; a full read does. If the meter
+reports fewer records than the highest sequence in the database, the command
+warns on stderr that the meter's history appears to have been reset or cleared
+and hints to run a full read, without changing the exit status. The two flags can
+be combined.
 
 ### Driver registration in the CLI
 
@@ -1020,7 +1084,8 @@ caller. `MeterManager` hands its callback to drivers as `ReadOptions.progress`
 protocol jargon. Within user-facing output a condition is reported by one line: a
 command-ending failure by the CLI's `error:`/`hint:` lines and a non-complete read
 by its single `retrieval is ...` line, so managers and drivers emit no progress
-event restating either. The CLI's `ConsoleReporter` shows `WARNING` always, `INFO`
+event restating either. A truncated read is neither, and `ConnectedMeter` reports
+it with one `INFO` line. The CLI's `ConsoleReporter` shows `WARNING` always, `INFO`
 with `-v`, and `DETAIL` with `-vv` (prefixed with elapsed time), throttles
 counters to the first, last, and each 10% step, and writes to stderr.
 
@@ -1040,13 +1105,19 @@ header line), at `--log-level` (`debug`, `info`, `warning`, or `error`; default
 
 ### Completion states
 
-`ReadResult.completion` has three states:
+`ReadResult.completion` has four states:
 
 - `COMPLETE`: the driver can positively establish that it received the full
   available history;
-- `PARTIAL`: retrieval ended early or the driver knows records are missing; and
+- `PARTIAL`: retrieval ended early or the driver knows records are missing,
+  including a shortened read that missed some of the records it targeted;
 - `UNKNOWN`: valid records were retrieved but the protocol cannot prove that the
-  history is complete.
+  history is complete; and
+- `TRUNCATED`: the read delivered every record it was asked for, and that was
+  deliberately fewer than the meter's whole history because `newest_count` was
+  reached or a known record was. `expected_count` still reports the meter's true
+  total. Unlike `PARTIAL` and `UNKNOWN`, this is a success: the CLI exits `0`
+  with no warning.
 
 For MicroTech the state follows from the collector:
 
@@ -1056,18 +1127,24 @@ flowchart TD
     c -->|yes| p1["PARTIAL<br/>termination: unsubscribe_failed"]
     c -->|no| e{"expected_count known?"}
     e -->|no| u["UNKNOWN<br/>termination: count_unknown"]
-    e -->|yes| all{"every index 1..N held?"}
-    all -->|yes| ok["COMPLETE<br/>termination: history_complete"]
+    e -->|yes| all{"every targeted index held?"}
     all -->|no| p2["PARTIAL<br/>termination: missing_records"]
+    all -->|yes| full{"targets cover the whole history 1..N?"}
+    full -->|yes| ok["COMPLETE<br/>termination: history_complete"]
+    full -->|no| tr["TRUNCATED<br/>termination: limit_reached or already_stored"]
     ok --> m{"disconnect fails afterwards<br/>and records exist?"}
+    tr --> m
     p1 --> m
     u --> m
     p2 --> m
     m -->|yes| p3["PARTIAL<br/>termination: disconnect_failed"]
 ```
 
-The result records expected, received, duplicate, rejected, and retry counts when
-known, plus a structured termination reason and the missing event indexes.
+The collector's targets are every index 1..N unless `read_history()` declared a
+smaller set, so `is_complete` and the missing indexes are relative to what the
+read targeted. The result records expected, received, duplicate, rejected, and
+retry counts when known, plus a structured termination reason and the missing
+event indexes.
 Duplicate events contribute to diagnostics but never appear more than once in the
 normalized records.
 
@@ -1119,7 +1196,7 @@ driver-selection, configuration, and log-file errors that map to usage failures.
 
 | Status | Meaning | Raised by |
 | --- | --- | --- |
-| `0` | Complete success | |
+| `0` | Complete or truncated success | |
 | `2` | Usage or ambiguous selection | Argument errors, `SelectionError`, `DriverSelectionError`, `ConfigError`, `AmbiguousDeviceError`, unopenable log file, `drivers info` on an incompatible driver |
 | `3` | No supported meter | `DeviceNotFoundError`, `UnsupportedDeviceError` |
 | `4` | Transport or connection failure | `DiscoveryError`, `MeterConnectionError` |

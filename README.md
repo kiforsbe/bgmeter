@@ -131,6 +131,28 @@ the single-folder location on the next `--store` read, provided no database
 already exists at the new path. An existing new-path database is never
 overwritten.
 
+To read only the most recent records instead of the whole history:
+
+```powershell
+bgmeter read --device ble:AA-BB-CC-DD-EE-FF --timezone Europe/Stockholm --newest 20
+```
+
+To read only what the local database does not already hold, which makes a
+routine sync cost almost nothing:
+
+```powershell
+bgmeter read --device ble:AA-BB-CC-DD-EE-FF --timezone Europe/Stockholm `
+  --new-only --store
+```
+
+`--new-only` walks backwards from the meter's newest record and stops at the
+first one already stored, so it does not fill gaps left by an earlier
+interrupted read; run a full read for that. It reads the database whether or
+not `--store` is given, so it can preview what is new without recording it. It
+never creates the database, so on a machine with no database it is simply a
+full read. When a flag shortens the read, the result is reported as `truncated`
+rather than `complete`, and the command exits 0.
+
 The meter stores a manually set local clock. `--timezone` tells the program how
 to interpret that local wall-clock time. Every record retains the original
 timezone-unspecified meter time, local interpreted time, UTC time, timezone,
