@@ -1,7 +1,7 @@
 # Architecture
 
 This document describes the implemented architecture of `bgmeter` at version
-0.2.0: three independently packaged Python source bases (a protocol-neutral
+0.3.0: three independently packaged Python source bases (a protocol-neutral
 core, a MicroTech driver, and a command-line frontend) colocated in this
 repository. The root `gocheck.py` is only a deprecated compatibility launcher
 for the CLI.
