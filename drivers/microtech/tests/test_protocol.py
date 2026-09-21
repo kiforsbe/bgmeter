@@ -320,7 +320,7 @@ async def test_read_history_queries_zero_then_missing_indexes_and_stops(
     )
 
     requested = [int.from_bytes(data[-4:-2], "big") for _, data, _ in session.writes]
-    assert requested == [0, 1, 2, 3]
+    assert requested == [0, 3, 2, 1]
     assert all(characteristic == "ffe1" for characteristic, _, _ in session.writes)
     assert all(response is False for _, _, response in session.writes)
     assert session.events[0] == "start:ffe1"
@@ -335,6 +335,86 @@ async def test_read_history_queries_zero_then_missing_indexes_and_stops(
         record for record in collector.records if record.native.event_index == 2
     ).request == build_history_request(2)
     assert capsys.readouterr() == ("", "")
+
+
+@pytest.mark.asyncio
+async def test_read_history_stops_after_the_requested_newest_count() -> None:
+    attempts = {index: [_indexed_frames(index)] for index in range(4)}
+    session = FakeGattSession(attempts)
+
+    collector = await read_history(
+        session,
+        "ffe1",
+        request_timeout=0.01,
+        retries=2,
+        newest_count=2,
+    )
+
+    requested = [int.from_bytes(data[-4:-2], "big") for _, data, _ in session.writes]
+    assert requested == [0, 3]
+    assert {record.native.event_index for record in collector.records} == {3, 4}
+    assert collector.expected_count == 4
+    assert collector.status is CompletionStatus.TRUNCATED
+    assert collector.truncation_reason == "limit_reached"
+
+
+@pytest.mark.asyncio
+async def test_newest_count_larger_than_the_history_reads_everything() -> None:
+    attempts = {index: [_indexed_frames(index)] for index in range(4)}
+    session = FakeGattSession(attempts)
+
+    collector = await read_history(
+        session,
+        "ffe1",
+        request_timeout=0.01,
+        retries=2,
+        newest_count=99,
+    )
+
+    assert {record.native.event_index for record in collector.records} == {1, 2, 3, 4}
+    assert collector.status is CompletionStatus.COMPLETE
+    assert collector.truncation_reason is None
+
+
+@pytest.mark.asyncio
+async def test_read_history_stops_at_the_first_record_the_caller_already_has() -> None:
+    attempts = {index: [_indexed_frames(index)] for index in range(4)}
+    session = FakeGattSession(attempts)
+
+    collector = await read_history(
+        session,
+        "ffe1",
+        request_timeout=0.01,
+        retries=2,
+        is_known=lambda event_index: event_index <= 2,
+    )
+
+    requested = [int.from_bytes(data[-4:-2], "big") for _, data, _ in session.writes]
+    assert requested == [0, 3]
+    assert {record.native.event_index for record in collector.records} == {3, 4}
+    assert collector.status is CompletionStatus.TRUNCATED
+    assert collector.truncation_reason == "already_stored"
+
+
+@pytest.mark.asyncio
+async def test_read_history_asks_for_nothing_when_the_newest_is_already_known() -> None:
+    attempts = {index: [_indexed_frames(index)] for index in range(4)}
+    session = FakeGattSession(attempts)
+
+    collector = await read_history(
+        session,
+        "ffe1",
+        request_timeout=0.01,
+        retries=2,
+        is_known=lambda event_index: True,
+    )
+
+    requested = [int.from_bytes(data[-4:-2], "big") for _, data, _ in session.writes]
+    assert requested == [0]
+    assert collector.record_count == 1
+    assert collector.status is CompletionStatus.TRUNCATED
+    assert collector.truncation_reason == "already_stored"
+    assert session.events[-1] == "stop:ffe1"
 
 
 @pytest.mark.asyncio
@@ -358,7 +438,7 @@ async def test_prewrite_record_cannot_establish_count_or_inherit_request() -> No
 
     requested = [int.from_bytes(data[-4:-2], "big") for _, data, _ in session.writes]
     by_index = {record.native.event_index: record for record in collector.records}
-    assert requested == [0, 1, 2, 3]
+    assert requested == [0, 3, 2, 1]
     assert collector.highest_observed_index == 4
     assert collector.expected_count == 4
     assert collector.status is CompletionStatus.COMPLETE
@@ -391,7 +471,7 @@ async def test_reordered_complete_message_cannot_impersonate_latest_response() -
 
     requested = [int.from_bytes(data[-4:-2], "big") for _, data, _ in session.writes]
     by_index = {record.native.event_index: record for record in collector.records}
-    assert requested == [0, 1, 2, 3]
+    assert requested == [0, 3, 2, 1]
     assert collector.highest_observed_index == 4
     assert collector.expected_count == 4
     assert collector.status is CompletionStatus.COMPLETE
@@ -426,7 +506,7 @@ async def test_nonzero_request_rejects_a_response_for_the_wrong_event() -> None:
     )
 
     requested = [int.from_bytes(data[-4:-2], "big") for _, data, _ in session.writes]
-    assert requested == [0, 1, 2, 2, 3]
+    assert requested == [0, 3, 2, 2, 1]
     assert collector.status is CompletionStatus.COMPLETE
     by_index = {record.native.event_index: record for record in collector.records}
     assert by_index[3].request == build_history_request(3)
@@ -439,7 +519,7 @@ async def test_nonzero_request_rejects_a_response_for_the_wrong_event() -> None:
     assert mismatch["record_event_indexes"] == (3,)
     assert tuple(
         request["event_index"] for request in collector.wire_evidence["requests"]
-    ) == (0, 1, 2, 2, 3)
+    ) == (0, 3, 2, 2, 1)
 
 
 def test_response_token_for_prior_request_cannot_match_active_request() -> None:
@@ -526,7 +606,7 @@ async def test_read_history_retries_a_missing_index_and_returns_partial() -> Non
     )
 
     requested = [int.from_bytes(data[-4:-2], "big") for _, data, _ in session.writes]
-    assert requested == [0, 1, 2, 2, 3]
+    assert requested == [0, 3, 2, 2, 1]
     assert collector.status is CompletionStatus.PARTIAL
     assert collector.retry_count == 1
     assert {record.native.event_index for record in collector.records} == {1, 3, 4}

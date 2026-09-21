@@ -55,18 +55,24 @@ async def read_history(
     request_timeout: float = 5.0,
     retries: int = 3,
     progress: ProgressCallback | None = None,
+    newest_count: int | None = None,
+    is_known: Callable[[int], bool] | None = None,
 ) -> HistoryRecordCollector:
     """Read indexed history, stopping notification reception in all outcomes."""
     if request_timeout <= 0:
         raise ValueError("request_timeout must be positive")
     if retries <= 0:
         raise ValueError("retries must be positive")
+    if newest_count is not None and newest_count < 1:
+        raise ValueError("newest_count must be at least 1")
 
     _log.info(
-        "history read started: characteristic=%s request_timeout=%.1fs retries=%d",
+        "history read started: characteristic=%s request_timeout=%.1fs retries=%d "
+        "newest_count=%s",
         characteristic,
         request_timeout,
         retries,
+        newest_count,
     )
     collector =HistoryRecordCollector(strict_live_mode=True)
     updated = asyncio.Event()
@@ -173,15 +179,35 @@ async def read_history(
         )
         if found_latest:
             latest_index = collector.expected_count
-            for event_index in range(1, latest_index + 1):
+            lowest_index = (
+                1 if newest_count is None else max(1, latest_index - newest_count + 1)
+            )
+            targets: list[int] = []
+            reason: str | None = None
+            for event_index in range(latest_index, lowest_index - 1, -1):
+                if is_known is not None and is_known(event_index):
+                    reason = "already_stored"
+                    break
+                targets.append(event_index)
+            else:
+                if lowest_index > 1:
+                    reason = "limit_reached"
+            collector.set_target_indexes(targets)
+            collector.truncation_reason = reason
+            _log.info(
+                "history walk targets %d..%d of %d (reason=%s)",
+                lowest_index,
+                latest_index,
+                latest_index,
+                reason,
+            )
+            for event_index in targets:
                 if collector.has_index(event_index):
                     continue
                 await request_until(
                     event_index,
                     lambda index=event_index: collector.has_index(index),
                 )
-                if collector.is_complete:
-                    break
     except BaseException as primary:
         try:
             await session.stop_notify(characteristic)

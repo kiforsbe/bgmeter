@@ -341,9 +341,9 @@ async def test_capture_read_normalizes_records_time_and_full_provenance(
     wire = result.diagnostics["microtech.wire"]
     assert tuple(request["event_index"] for request in wire["requests"]) == (
         0,
-        1,
-        2,
         3,
+        2,
+        1,
     )
     assert tuple(request["request"] for request in wire["requests"]) == tuple(
         data for _, data, _ in session.writes
