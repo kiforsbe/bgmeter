@@ -102,6 +102,17 @@ class ConnectedMeter:
                     "All records were received.",
                 ),
             )
+        elif result.completion is CompletionStatus.TRUNCATED:
+            emit_progress(
+                options.progress,
+                ProgressEvent(
+                    ProgressLevel.INFO,
+                    "No new records."
+                    if not result.records
+                    else f"Read {_plural(len(result.records), 'record')}. "
+                    "Older records were not requested.",
+                ),
+            )
         return result
 
 

@@ -72,6 +72,8 @@ class FakeDriver:
         confidence=90,
         supported_transports=frozenset({"fake"}),
         read_gate=None,
+        completion=CompletionStatus.COMPLETE,
+        records=(),
     ):
         self.driver_id = driver_id
         self.confidence = confidence
@@ -81,6 +83,8 @@ class FakeDriver:
         self.read_sessions = []
         self.read_options = []
         self.read_gate = read_gate
+        self.completion = completion
+        self.records = records
 
     def match_candidate(self, endpoint):
         self.match_calls.append(endpoint)
@@ -98,8 +102,8 @@ class FakeDriver:
         instant = datetime(2026, 9, 18, tzinfo=UTC)
         return ReadResult(
             device=device,
-            records=(),
-            completion=CompletionStatus.COMPLETE,
+            records=self.records,
+            completion=self.completion,
             started_at=instant,
             ended_at=instant,
         )
@@ -696,6 +700,36 @@ async def test_read_reports_connect_completion_and_disconnect():
     assert _summary(events) == [
         (ProgressLevel.INFO, "Connecting to Meter..."),
         (ProgressLevel.INFO, "Read 0 records. All records were received."),
+        (ProgressLevel.DETAIL, "Disconnecting from the meter."),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_read_reports_a_truncated_read_that_returned_records():
+    events = []
+    driver = FakeDriver(completion=CompletionStatus.TRUNCATED, records=("a", "b"))
+    manager, _, _ = make_manager(driver=driver, progress=events.append)
+
+    await manager.read(make_device())
+
+    assert _summary(events) == [
+        (ProgressLevel.INFO, "Connecting to Meter..."),
+        (ProgressLevel.INFO, "Read 2 records. Older records were not requested."),
+        (ProgressLevel.DETAIL, "Disconnecting from the meter."),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_read_reports_a_truncated_read_that_returned_nothing():
+    events = []
+    driver = FakeDriver(completion=CompletionStatus.TRUNCATED)
+    manager, _, _ = make_manager(driver=driver, progress=events.append)
+
+    await manager.read(make_device())
+
+    assert _summary(events) == [
+        (ProgressLevel.INFO, "Connecting to Meter..."),
+        (ProgressLevel.INFO, "No new records."),
         (ProgressLevel.DETAIL, "Disconnecting from the meter."),
     ]
 
