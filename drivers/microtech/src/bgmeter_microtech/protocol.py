@@ -189,15 +189,14 @@ async def read_history(
                     reason = "already_stored"
                     break
                 targets.append(event_index)
-            else:
+            else:  # runs only when no known record stopped the walk
                 if lowest_index > 1:
                     reason = "limit_reached"
             collector.set_target_indexes(targets)
             collector.truncation_reason = reason
             _log.info(
-                "history walk targets %d..%d of %d (reason=%s)",
-                lowest_index,
-                latest_index,
+                "history walk: %d target(s) of %d (reason=%s)",
+                len(targets),
                 latest_index,
                 reason,
             )

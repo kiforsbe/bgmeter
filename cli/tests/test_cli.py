@@ -584,6 +584,11 @@ def _read_setup(tmp_path, monkeypatch, result):
     return config_path, database_path, managers, manager_factory
 
 
+def _consistent_result(result):
+    """The fixture's native sequences run to 8, so a consistent meter reports 8 records."""
+    return replace(result, expected_count=8)
+
+
 def test_newest_passes_a_limit_to_the_driver(tmp_path, monkeypatch, complete_result):
     config_path, database_path, managers, factory = _read_setup(
         tmp_path, monkeypatch, complete_result
@@ -622,12 +627,13 @@ def test_newest_rejects_a_non_positive_count(tmp_path, monkeypatch, complete_res
 def test_new_only_passes_stored_record_ids_without_requiring_store(
     tmp_path, monkeypatch, complete_result
 ):
+    up_to_date = _consistent_result(complete_result)
     config_path, database_path, managers, factory = _read_setup(
-        tmp_path, monkeypatch, complete_result
+        tmp_path, monkeypatch, up_to_date
     )
     MeasurementStore(database_path).store(complete_result.records)
 
-    status, _, _ = invoke(
+    status, _, stderr = invoke(
         ["read", "--device", "fake:meter-1", "--new-only"],
         config_path=config_path,
         database_path=database_path,
@@ -635,6 +641,7 @@ def test_new_only_passes_stored_record_ids_without_requiring_store(
     )
 
     assert status == 0
+    assert "appears to have been reset" not in stderr
     _, options = managers[0].read_calls[0]
     assert options.known_record_ids == frozenset(
         {"fake:meter-1:7", "fake:meter-1:8"}
@@ -741,6 +748,120 @@ def test_new_only_warns_when_the_meter_holds_fewer_records_than_the_database(
     assert status == 0
     assert "appears to have been reset" in stderr
     assert "full read" in stderr
+
+
+def test_new_only_reports_an_unreadable_database_as_a_store_error(
+    tmp_path, monkeypatch, complete_result
+):
+    config_path, database_path, managers, factory = _read_setup(
+        tmp_path, monkeypatch, complete_result
+    )
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("PRAGMA user_version = 99")
+    connection.close()
+
+    status, stdout, stderr = invoke(
+        ["read", "--device", "fake:meter-1", "--new-only"],
+        config_path=config_path,
+        database_path=database_path,
+        manager_factory=factory,
+    )
+
+    assert status == 6
+    assert stdout == ""
+    assert "error: cannot read stored measurements:" in stderr
+    assert managers[0].read_calls == []
+
+
+@pytest.mark.parametrize("expected_count", [8, 9])
+def test_new_only_does_not_warn_when_the_meter_holds_the_stored_history(
+    tmp_path, monkeypatch, complete_result, expected_count
+):
+    meter = replace(complete_result, expected_count=expected_count)
+    config_path, database_path, _managers, factory = _read_setup(
+        tmp_path, monkeypatch, meter
+    )
+    MeasurementStore(database_path).store(complete_result.records)
+
+    status, _, stderr = invoke(
+        ["read", "--device", "fake:meter-1", "--new-only"],
+        config_path=config_path,
+        database_path=database_path,
+        manager_factory=factory,
+    )
+
+    assert status == 0
+    assert "appears to have been reset" not in stderr
+
+
+def test_the_reset_warning_is_only_for_new_only_reads(
+    tmp_path, monkeypatch, complete_result
+):
+    reset_meter = replace(complete_result, expected_count=1)
+    config_path, database_path, _managers, factory = _read_setup(
+        tmp_path, monkeypatch, reset_meter
+    )
+    MeasurementStore(database_path).store(complete_result.records)
+
+    status, _, stderr = invoke(
+        ["read", "--device", "fake:meter-1"],
+        config_path=config_path,
+        database_path=database_path,
+        manager_factory=factory,
+    )
+
+    assert status == 0
+    assert "appears to have been reset" not in stderr
+
+
+def test_new_only_with_store_sends_known_ids_and_stores_the_new_records(
+    tmp_path, monkeypatch, complete_result
+):
+    up_to_date = _consistent_result(complete_result)
+    config_path, database_path, managers, factory = _read_setup(
+        tmp_path, monkeypatch, up_to_date
+    )
+    MeasurementStore(database_path).store(complete_result.records[:1])
+
+    status, _, stderr = invoke(
+        ["read", "--device", "fake:meter-1", "--new-only", "--store"],
+        config_path=config_path,
+        database_path=database_path,
+        manager_factory=factory,
+    )
+
+    assert status == 0
+    assert "appears to have been reset" not in stderr
+    assert managers[0].read_calls[0][1].known_record_ids == frozenset({"fake:meter-1:7"})
+    with sqlite3.connect(database_path) as connection:
+        stored = connection.execute(
+            "SELECT record_id FROM measurements ORDER BY native_sequence"
+        ).fetchall()
+    connection.close()
+    assert stored == [("fake:meter-1:7",), ("fake:meter-1:8",)]
+
+
+def test_new_only_with_store_warns_about_a_reset_meter_and_still_stores(
+    tmp_path, monkeypatch, complete_result
+):
+    reset_meter = replace(complete_result, expected_count=1)
+    config_path, database_path, _managers, factory = _read_setup(
+        tmp_path, monkeypatch, reset_meter
+    )
+    MeasurementStore(database_path).store(complete_result.records[:1])
+
+    status, _, stderr = invoke(
+        ["read", "--device", "fake:meter-1", "--new-only", "--store"],
+        config_path=config_path,
+        database_path=database_path,
+        manager_factory=factory,
+    )
+
+    assert status == 0
+    assert "appears to have been reset" in stderr
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM measurements").fetchone() == (2,)
+    connection.close()
 
 
 def test_store_failure_returns_status_six_without_publishing_output(

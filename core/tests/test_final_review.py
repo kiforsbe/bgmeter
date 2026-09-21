@@ -142,6 +142,24 @@ async def test_one_shot_read_retains_records_and_evidence_after_close_failure():
 
 
 @pytest.mark.asyncio
+async def test_close_failure_after_zero_record_truncated_read_returns_partial():
+    original = replace(make_result(), records=(), completion=CompletionStatus.TRUNCATED,
+                        termination_reason="already_stored", received_count=0)
+
+    class UpToDateDriver(FakeDriver):
+        async def read_records(self, session, device, options):
+            return original
+
+    manager, _, transport = make_manager(UpToDateDriver(), FailingCloseTransport())
+    result = await manager.read(make_device())
+    assert result.records == ()
+    assert result.completion == CompletionStatus.PARTIAL
+    assert result.termination_reason == "disconnect_failed"
+    assert result.diagnostics["bgmeter.cleanup"]["previous_completion"] == "truncated"
+    assert transport.sessions[-1].closed
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ["open", "read", "probe"])
 @pytest.mark.parametrize("primary_type", [ProtocolError, asyncio.CancelledError])
 @pytest.mark.parametrize("cleanup_type", [RuntimeError, asyncio.CancelledError])
@@ -170,13 +188,11 @@ async def test_primary_exception_survives_cleanup_failure(operation, primary_typ
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("operation", ["open", "empty_read", "probe"])
+@pytest.mark.parametrize("operation", ["open", "probe"])
 async def test_close_only_failure_without_records_is_typed(operation):
     manager, _, _ = make_manager(transport=FailingCloseTransport())
     with pytest.raises(MeterConnectionError, match="disconnect failed") as caught:
-        if operation == "empty_read":
-            await manager.read(make_device())
-        elif operation == "probe":
+        if operation == "probe":
             await manager.discover()
         else:
             async with manager.open(make_device()):

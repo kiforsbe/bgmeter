@@ -714,7 +714,7 @@ async def test_read_reports_a_truncated_read_that_returned_records():
 
     assert _summary(events) == [
         (ProgressLevel.INFO, "Connecting to Meter..."),
-        (ProgressLevel.INFO, "Read 2 records. Older records were not requested."),
+        (ProgressLevel.INFO, "Read 2 records. Older records were not read."),
         (ProgressLevel.DETAIL, "Disconnecting from the meter."),
     ]
 

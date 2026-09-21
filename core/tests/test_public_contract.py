@@ -161,6 +161,12 @@ def test_read_options_carry_optional_read_limits():
         bounded.newest_count = 5
 
 
+@pytest.mark.parametrize("newest_count", [0, -1])
+def test_read_options_reject_non_positive_newest_count(newest_count):
+    with pytest.raises(ValueError, match="newest_count must be at least 1"):
+        ReadOptions(newest_count=newest_count)
+
+
 def test_interpret_meter_datetime_preserves_wall_clock_and_adds_utc():
     result = interpret_meter_datetime(
         datetime(2026, 9, 16, 19, 10, 16),

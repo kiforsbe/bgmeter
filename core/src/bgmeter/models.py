@@ -162,6 +162,8 @@ class ReadOptions:
     progress: ProgressCallback | None = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
+        if self.newest_count is not None and self.newest_count < 1:
+            raise ValueError("newest_count must be at least 1")
         object.__setattr__(
             self, "known_record_ids", frozenset(self.known_record_ids)
         )

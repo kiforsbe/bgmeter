@@ -110,7 +110,7 @@ class ConnectedMeter:
                     "No new records."
                     if not result.records
                     else f"Read {_plural(len(result.records), 'record')}. "
-                    "Older records were not requested.",
+                    "Older records were not read.",
                 ),
             )
         return result
@@ -309,7 +309,7 @@ class MeterManager:
             async with self.open(device) as meter:
                 result = await meter.read_records(options)
         except _SessionCloseError as error:
-            if result is None or not result.records:
+            if result is None:
                 raise
             _log.error(
                 "disconnect failed after a read that returned %d record(s); "
