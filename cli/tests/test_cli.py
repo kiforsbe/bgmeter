@@ -44,7 +44,7 @@ from bgmeter_cli.config import (  # noqa: E402
     load_config,
     save_config,
 )
-from bgmeter_cli.store import StoreError  # noqa: E402
+from bgmeter_cli.store import MeasurementStore, StoreError  # noqa: E402
 from bgmeter_cli.exporters import (  # noqa: E402
     CSV_COLUMNS,
     render_csv,
@@ -561,6 +561,186 @@ def test_partial_read_stores_valid_records_before_returning_status_five(
     assert "retrieval is partial" in stderr
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM measurements").fetchone() == (2,)
+
+
+def _read_setup(tmp_path, monkeypatch, result):
+    """Return (config_path, database_path, managers, manager_factory).
+
+    ``managers`` is filled in by the factory, following the same pattern as
+    ``test_read_prompts_for_a_device_when_several_are_discovered``.
+    """
+    point = FakeEntryPoint("example", driver_factory())
+    install_entry_points(monkeypatch, point)
+    config_path = tmp_path / "drivers.json"
+    save_config(DriverConfig(("example",)), config_path)
+    database_path = tmp_path / "measurements.sqlite3"
+    managers = []
+
+    def manager_factory(registry, progress=None):
+        manager = FakeManager(registry, devices=(make_device(),), result=result)
+        managers.append(manager)
+        return manager
+
+    return config_path, database_path, managers, manager_factory
+
+
+def test_newest_passes_a_limit_to_the_driver(tmp_path, monkeypatch, complete_result):
+    config_path, database_path, managers, factory = _read_setup(
+        tmp_path, monkeypatch, complete_result
+    )
+
+    status, _, _ = invoke(
+        ["read", "--device", "fake:meter-1", "--newest", "5"],
+        config_path=config_path,
+        database_path=database_path,
+        manager_factory=factory,
+    )
+
+    assert status == 0
+    _, options = managers[0].read_calls[0]
+    assert options.newest_count == 5
+    assert options.known_record_ids == frozenset()
+
+
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_newest_rejects_a_non_positive_count(tmp_path, monkeypatch, complete_result, value):
+    config_path, database_path, _managers, factory = _read_setup(
+        tmp_path, monkeypatch, complete_result
+    )
+
+    status, _, stderr = invoke(
+        ["read", "--device", "fake:meter-1", "--newest", value],
+        config_path=config_path,
+        database_path=database_path,
+        manager_factory=factory,
+    )
+
+    assert status == 2
+    assert "must be a positive whole number" in stderr
+
+
+def test_new_only_passes_stored_record_ids_without_requiring_store(
+    tmp_path, monkeypatch, complete_result
+):
+    config_path, database_path, managers, factory = _read_setup(
+        tmp_path, monkeypatch, complete_result
+    )
+    MeasurementStore(database_path).store(complete_result.records)
+
+    status, _, _ = invoke(
+        ["read", "--device", "fake:meter-1", "--new-only"],
+        config_path=config_path,
+        database_path=database_path,
+        manager_factory=factory,
+    )
+
+    assert status == 0
+    _, options = managers[0].read_calls[0]
+    assert options.known_record_ids == frozenset(
+        {"fake:meter-1:7", "fake:meter-1:8"}
+    )
+
+
+def test_new_only_on_a_fresh_database_sends_no_known_ids(
+    tmp_path, monkeypatch, complete_result
+):
+    config_path, database_path, managers, factory = _read_setup(
+        tmp_path, monkeypatch, complete_result
+    )
+
+    status, _, _ = invoke(
+        ["read", "--device", "fake:meter-1", "--new-only"],
+        config_path=config_path,
+        database_path=database_path,
+        manager_factory=factory,
+    )
+
+    assert status == 0
+    assert managers[0].read_calls[0][1].known_record_ids == frozenset()
+    assert not database_path.exists()
+
+
+def test_truncated_read_succeeds_quietly(tmp_path, monkeypatch, complete_result):
+    truncated = replace(
+        complete_result,
+        completion=CompletionStatus.TRUNCATED,
+        termination_reason="limit_reached",
+    )
+    config_path, database_path, _managers, factory = _read_setup(
+        tmp_path, monkeypatch, truncated
+    )
+
+    status, stdout, stderr = invoke(
+        ["read", "--device", "fake:meter-1", "--newest", "2"],
+        config_path=config_path,
+        database_path=database_path,
+        manager_factory=factory,
+    )
+
+    assert status == 0
+    assert "warning" not in stderr
+    assert "truncated" in stdout
+
+
+def test_an_empty_truncated_read_renders_every_output(
+    tmp_path, monkeypatch, complete_result
+):
+    nothing_new = replace(
+        complete_result,
+        records=(),
+        received_count=0,
+        completion=CompletionStatus.TRUNCATED,
+        termination_reason="already_stored",
+    )
+    config_path, database_path, _managers, factory = _read_setup(
+        tmp_path, monkeypatch, nothing_new
+    )
+    csv_path = tmp_path / "out.csv"
+    json_path = tmp_path / "out.json"
+
+    status, stdout, _ = invoke(
+        [
+            "read",
+            "--device",
+            "fake:meter-1",
+            "--new-only",
+            "--output",
+            "terminal",
+            "--output",
+            f"csv={csv_path}",
+            "--output",
+            f"json={json_path}",
+        ],
+        config_path=config_path,
+        database_path=database_path,
+        manager_factory=factory,
+    )
+
+    assert status == 0
+    assert "received 0 of 2" in stdout
+    assert json.loads(json_path.read_text(encoding="utf-8"))["records"] == []
+    assert list(csv.DictReader(csv_path.read_text(encoding="utf-8").splitlines())) == []
+
+
+def test_new_only_warns_when_the_meter_holds_fewer_records_than_the_database(
+    tmp_path, monkeypatch, complete_result
+):
+    reset_meter = replace(complete_result, expected_count=1)
+    config_path, database_path, _managers, factory = _read_setup(
+        tmp_path, monkeypatch, reset_meter
+    )
+    MeasurementStore(database_path).store(complete_result.records)
+
+    status, _, stderr = invoke(
+        ["read", "--device", "fake:meter-1", "--new-only"],
+        config_path=config_path,
+        database_path=database_path,
+        manager_factory=factory,
+    )
+
+    assert status == 0
+    assert "appears to have been reset" in stderr
+    assert "full read" in stderr
 
 
 def test_store_failure_returns_status_six_without_publishing_output(

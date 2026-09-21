@@ -73,6 +73,18 @@ def _timezone_name(value: str) -> str:
     return value
 
 
+def _positive_count(value: str) -> int:
+    try:
+        count = int(value)
+    except ValueError:
+        count = 0
+    if count < 1:
+        raise argparse.ArgumentTypeError(
+            f"{value!r} must be a positive whole number"
+        )
+    return count
+
+
 def _add_reporting_options(parser: argparse.ArgumentParser, suffix: str) -> None:
     parser.add_argument(
         "-v",
@@ -143,6 +155,17 @@ def _parser() -> argparse.ArgumentParser:
     )
     read.add_argument("--show-raw", action="store_true", help="show raw bytes in terminal output")
     read.add_argument("--store", action="store_true", help="store records in the local SQLite database")
+    read.add_argument(
+        "--newest",
+        type=_positive_count,
+        metavar="N",
+        help="read only the N most recent records",
+    )
+    read.add_argument(
+        "--new-only",
+        action="store_true",
+        help="stop at the first record already in the local database",
+    )
     read.add_argument("--force", action="store_true", help="replace existing output files")
 
     drivers = commands.add_parser("drivers", help="inspect persistent driver registration")
@@ -388,14 +411,52 @@ async def _run_meter_command(
 
     outputs = _parse_outputs(arguments.output)
     _check_destinations(outputs, force=arguments.force)
+    stored_state = None
+    if arguments.new_only:
+        try:
+            stored_state = MeasurementStore(database_path).device_state(
+                driver_id=device.driver_id,
+                device_id=device.selector,
+            )
+        except StoreError as error:
+            raise ExportError(f"cannot read stored measurements: {error}") from error
+        _log.info(
+            "device %s already holds %d record(s)",
+            device.selector,
+            len(stored_state.record_ids),
+        )
     _log.info("reading %s", device.selector)
-    result = await manager.read(device, ReadOptions(timezone=arguments.timezone))
+    result = await manager.read(
+        device,
+        ReadOptions(
+            timezone=arguments.timezone,
+            newest_count=arguments.newest,
+            known_record_ids=(
+                stored_state.record_ids if stored_state is not None else frozenset()
+            ),
+        ),
+    )
     _log.info(
         "read complete: device=%s completion=%s records=%d",
         device.selector,
         result.completion.value,
         len(result.records),
     )
+    if (
+        stored_state is not None
+        and stored_state.highest_sequence is not None
+        and result.expected_count is not None
+        and result.expected_count < stored_state.highest_sequence
+    ):
+        stderr.write(
+            f"warning: the meter reports {result.expected_count} record(s) but the "
+            f"database already holds {stored_state.highest_sequence}; its history "
+            "appears to have been reset or cleared.\n"
+        )
+        stderr.write(
+            "hint: run a full read (without --new-only) to capture this meter's "
+            "current history.\n"
+        )
     if arguments.store:
         _log.info("storing %d record(s)", len(result.records))
         try:
@@ -408,7 +469,7 @@ async def _run_meter_command(
         [(o.format, str(o.path) if o.path else "stdout") for o in outputs],
     )
     _publish_outputs(rendered, force=arguments.force, stdout=stdout)
-    if result.completion is not CompletionStatus.COMPLETE:
+    if result.completion in _OUTCOME_LINES:
         stderr.write(_OUTCOME_LINES[result.completion])
         return 5
     return 0
