@@ -90,6 +90,12 @@ def _require_data_characteristic(session: TransportSession):
     return characteristic
 
 
+def history_record_id(device: MeterDevice, event_index: int) -> str:
+    """Return the public record identity for one MicroTech event index."""
+
+    return f"{MicroTechBgmDriver.driver_id}:{device.selector}:{event_index}"
+
+
 def _normalize_record(
     captured: CapturedHistoryRecord,
     *,
@@ -98,9 +104,7 @@ def _normalize_record(
 ) -> GlucoseRecord:
     native = captured.native
     return GlucoseRecord(
-        record_id=(
-            f"{MicroTechBgmDriver.driver_id}:{device.selector}:{native.event_index}"
-        ),
+        record_id=history_record_id(device, native.event_index),
         native_sequence=native.event_index,
         mmol_l=(Decimal(native.glucose_mg_dl) / _MG_DL_PER_MMOL_L).quantize(
             _MMOL_QUANTUM
@@ -216,11 +220,12 @@ class MicroTechBgmDriver:
         characteristic = _require_data_characteristic(session)
         started_at = datetime.now(UTC)
         _log.info(
-            "read_records started: device=%s timezone=%s request_timeout=%.1fs retries=%d",
+            "read_records started: device=%s timezone=%s request_timeout=%.1fs retries=%d newest_count=%s",
             device.selector,
             options.timezone,
             options.request_timeout,
             options.retries,
+            options.newest_count,
         )
         try:
             collector = await read_history(
@@ -229,6 +234,15 @@ class MicroTechBgmDriver:
                 request_timeout=options.request_timeout,
                 retries=options.retries,
                 progress=options.progress,
+                newest_count=options.newest_count,
+                is_known=(
+                    (
+                        lambda event_index: history_record_id(device, event_index)
+                        in options.known_record_ids
+                    )
+                    if options.known_record_ids
+                    else None
+                ),
             )
         except asyncio.CancelledError:
             raise
@@ -252,25 +266,22 @@ class MicroTechBgmDriver:
                 "The meter connected but did not send any usable records."
             )
 
+        captured = tuple(
+            item
+            for item in collector.records
+            if history_record_id(device, item.native.event_index)
+            not in options.known_record_ids
+        )
         records = tuple(
             _normalize_record(
-                captured,
+                item,
                 device=device,
                 timezone_name=options.timezone,
             )
-            for captured in collector.records
+            for item in captured
         )
         expected_count = collector.expected_count
-        received_indexes = {record.native.event_index for record in collector.records}
-        missing_indexes = (
-            tuple(
-                index
-                for index in range(1, expected_count + 1)
-                if index not in received_indexes
-            )
-            if expected_count is not None
-            else ()
-        )
+        missing_indexes = collector.missing_indexes
         warnings = (
             (
                 "Missing MicroTech history "
@@ -284,13 +295,16 @@ class MicroTechBgmDriver:
                 "MicroTech notification cleanup failed: "
                 + cleanup_evidence["message"],
             )
-        termination_reason = (
-            "unsubscribe_failed"
-            if cleanup_evidence is not None
-            else "history_complete"
-            if collector.status is CompletionStatus.COMPLETE
-            else "missing_records" if missing_indexes else "count_unknown"
-        )
+        if cleanup_evidence is not None:
+            termination_reason = "unsubscribe_failed"
+        elif collector.status is CompletionStatus.TRUNCATED:
+            termination_reason = collector.truncation_reason or "history_truncated"
+        elif collector.status is CompletionStatus.COMPLETE:
+            termination_reason = "history_complete"
+        elif missing_indexes:
+            termination_reason = "missing_records"
+        else:
+            termination_reason = "count_unknown"
 
         result = ReadResult(
             device=device,
@@ -320,6 +334,7 @@ class MicroTechBgmDriver:
                 ),
                 "microtech.empty_response_count": collector.empty_response_count,
                 "microtech.highest_observed_index": collector.highest_observed_index,
+                "microtech.truncation_reason": collector.truncation_reason,
                 "microtech.wire": collector.wire_evidence,
                 **(
                     {"microtech.cleanup": cleanup_evidence}
@@ -344,4 +359,4 @@ def driver_factory() -> MicroTechBgmDriver:
     return MicroTechBgmDriver()
 
 
-__all__ = ["MicroTechBgmDriver", "driver_factory"]
+__all__ = ["MicroTechBgmDriver", "driver_factory", "history_record_id"]

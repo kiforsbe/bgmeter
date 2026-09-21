@@ -26,6 +26,7 @@ from bgmeter import (
     UnsupportedDeviceError,
 )
 from bgmeter_microtech import MicroTechBgmDriver, driver_factory
+from bgmeter_microtech.driver import history_record_id
 from bgmeter_microtech.records import CapturedHistoryRecord, NativeHistoryRecord
 
 
@@ -462,6 +463,80 @@ async def test_partial_read_reports_exact_missing_indexes_and_counts() -> None:
     assert result.termination_reason == "missing_records"
     assert result.diagnostics["microtech.missing_event_indexes"] == (2,)
     assert "event index 2" in result.warnings[0]
+
+
+@pytest.mark.asyncio
+async def test_newest_count_reads_only_the_most_recent_records() -> None:
+    driver = driver_factory()
+    endpoint = _endpoint()
+    device = _device(endpoint, driver)
+    session = CaptureGattSession(endpoint, notifications=_capture_notifications())
+
+    result = await driver.read_records(
+        session, device, ReadOptions(timezone="UTC", newest_count=2)
+    )
+
+    assert [record.native_sequence for record in result.records] == [3, 4]
+    assert result.completion is CompletionStatus.TRUNCATED
+    assert result.expected_count == 4
+    assert result.received_count == 2
+    assert result.termination_reason == "limit_reached"
+    assert result.warnings == ()
+
+
+@pytest.mark.asyncio
+async def test_known_record_ids_stop_the_read_and_leave_the_result() -> None:
+    driver = driver_factory()
+    endpoint = _endpoint()
+    device = _device(endpoint, driver)
+    session = CaptureGattSession(endpoint, notifications=_capture_notifications())
+    known = frozenset(
+        f"microtech-bgm:{device.selector}:{index}" for index in (1, 2, 3)
+    )
+
+    result = await driver.read_records(
+        session, device, ReadOptions(timezone="UTC", known_record_ids=known)
+    )
+
+    assert [record.native_sequence for record in result.records] == [4]
+    assert result.completion is CompletionStatus.TRUNCATED
+    assert result.termination_reason == "already_stored"
+
+
+@pytest.mark.asyncio
+async def test_an_up_to_date_meter_returns_an_empty_result_not_an_error() -> None:
+    driver = driver_factory()
+    endpoint = _endpoint()
+    device = _device(endpoint, driver)
+    session = CaptureGattSession(endpoint, notifications=_capture_notifications())
+    known = frozenset(
+        f"microtech-bgm:{device.selector}:{index}" for index in (1, 2, 3, 4)
+    )
+
+    result = await driver.read_records(
+        session, device, ReadOptions(timezone="UTC", known_record_ids=known)
+    )
+
+    assert result.records == ()
+    assert result.received_count == 0
+    assert result.expected_count == 4
+    assert result.completion is CompletionStatus.TRUNCATED
+    assert result.termination_reason == "already_stored"
+
+
+@pytest.mark.asyncio
+async def test_history_record_id_matches_the_normalized_record_id() -> None:
+    driver = driver_factory()
+    endpoint = _endpoint()
+    device = _device(endpoint, driver)
+    session = CaptureGattSession(endpoint, notifications=_capture_notifications())
+
+    result = await driver.read_records(session, device, ReadOptions(timezone="UTC"))
+
+    assert {record.native_sequence for record in result.records} == {1, 2, 3, 4}
+    assert [record.record_id for record in result.records] == [
+        history_record_id(device, record.native_sequence) for record in result.records
+    ]
 
 
 @pytest.mark.asyncio
