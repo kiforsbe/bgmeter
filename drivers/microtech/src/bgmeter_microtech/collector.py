@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
@@ -86,6 +86,8 @@ class HistoryRecordCollector:
         self.highest_observed_index = 0
         self.expected_count: int | None = None
         self.retry_count = 0
+        self.truncation_reason: str | None = None
+        self._target_indexes: frozenset[int] | None = None
         self._cleanup_evidence: dict[str, str] | None = None
         self._strict_live_mode = strict_live_mode
         self._request_generation = 0
@@ -168,10 +170,30 @@ class HistoryRecordCollector:
         }
 
     @property
-    def is_complete(self) -> bool:
+    def _full_history_indexes(self) -> frozenset[int] | None:
         if self.expected_count is None or self.expected_count <= 0:
+            return None
+        return frozenset(range(1, self.expected_count + 1))
+
+    @property
+    def _targets(self) -> frozenset[int] | None:
+        if self._target_indexes is not None:
+            return self._target_indexes
+        return self._full_history_indexes
+
+    @property
+    def is_complete(self) -> bool:
+        targets = self._targets
+        if targets is None:
             return False
-        return all(index in self._records for index in range(1, self.expected_count + 1))
+        return all(index in self._records for index in targets)
+
+    @property
+    def missing_indexes(self) -> tuple[int, ...]:
+        targets = self._targets
+        if targets is None:
+            return ()
+        return tuple(sorted(index for index in targets if index not in self._records))
 
     @property
     def transmission_count(self) -> int:
@@ -199,9 +221,11 @@ class HistoryRecordCollector:
             return CompletionStatus.PARTIAL
         if self.expected_count is None:
             return CompletionStatus.UNKNOWN
-        if self.is_complete:
-            return CompletionStatus.COMPLETE
-        return CompletionStatus.PARTIAL
+        if not self.is_complete:
+            return CompletionStatus.PARTIAL
+        if self._targets != self._full_history_indexes:
+            return CompletionStatus.TRUNCATED
+        return CompletionStatus.COMPLETE
 
     def record_cleanup_failure(self, operation: str, error: Exception) -> None:
         """Retain serializable evidence when post-read cleanup fails."""
@@ -215,6 +239,10 @@ class HistoryRecordCollector:
 
     def has_index(self, event_index: int) -> bool:
         return event_index in self._records
+
+    def set_target_indexes(self, indexes: Iterable[int]) -> None:
+        """Declare which event indexes this read intends to fetch."""
+        self._target_indexes = frozenset(indexes)
 
     def register_request(self, event_index: int, request: bytes) -> None:
         """Register one request write by the token echoed in its response."""

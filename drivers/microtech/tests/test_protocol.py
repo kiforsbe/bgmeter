@@ -725,6 +725,58 @@ def test_collector_exposes_transmission_and_record_counters() -> None:
     assert collector.attributions_since(1) == ()
 
 
+def _collector_with_indexes(*indexes: int) -> HistoryRecordCollector:
+    collector = HistoryRecordCollector()
+    for index in sorted(indexes):
+        for frame in _frames(0 if index == 4 else index):
+            collector.add_notification(frame)
+    return collector
+
+
+def test_collector_without_targets_keeps_whole_history_semantics() -> None:
+    collector = _collector_with_indexes(1, 2, 3, 4)
+
+    assert collector.expected_count == 4
+    assert collector.is_complete is True
+    assert collector.missing_indexes == ()
+    assert collector.truncation_reason is None
+    assert collector.status is CompletionStatus.COMPLETE
+
+
+def test_collector_reports_truncated_when_targets_are_a_subset() -> None:
+    collector = _collector_with_indexes(3, 4)
+    collector.set_target_indexes([4, 3])
+
+    assert collector.expected_count == 4
+    assert collector.is_complete is True
+    assert collector.missing_indexes == ()
+    assert collector.status is CompletionStatus.TRUNCATED
+
+
+def test_collector_reports_partial_when_a_targeted_index_is_missing() -> None:
+    collector = _collector_with_indexes(4)
+    collector.set_target_indexes([4, 3])
+
+    assert collector.missing_indexes == (3,)
+    assert collector.status is CompletionStatus.PARTIAL
+
+
+def test_collector_reports_truncated_for_an_empty_target_set() -> None:
+    collector = _collector_with_indexes(4)
+    collector.set_target_indexes([])
+
+    assert collector.is_complete is True
+    assert collector.missing_indexes == ()
+    assert collector.status is CompletionStatus.TRUNCATED
+
+
+def test_collector_targets_covering_the_whole_history_stay_complete() -> None:
+    collector = _collector_with_indexes(1, 2, 3, 4)
+    collector.set_target_indexes([4, 3, 2, 1])
+
+    assert collector.status is CompletionStatus.COMPLETE
+
+
 def test_progress_is_optional_for_read_history_callers() -> None:
     import inspect
 
