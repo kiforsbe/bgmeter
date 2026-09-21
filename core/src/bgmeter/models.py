@@ -60,6 +60,7 @@ class CompletionStatus(StrEnum):
     COMPLETE = "complete"
     PARTIAL = "partial"
     UNKNOWN = "unknown"
+    TRUNCATED = "truncated"
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,7 +157,14 @@ class ReadOptions:
     timezone: str | None = None
     request_timeout: float = 5.0
     retries: int = 3
+    newest_count: int | None = None
+    known_record_ids: frozenset[str] = frozenset()
     progress: ProgressCallback | None = field(default=None, compare=False, repr=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self, "known_record_ids", frozenset(self.known_record_ids)
+        )
 
 
 @dataclass(frozen=True, slots=True)
