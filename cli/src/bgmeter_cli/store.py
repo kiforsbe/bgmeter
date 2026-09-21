@@ -56,6 +56,14 @@ class StoreSummary:
     duplicate_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class StoredDeviceState:
+    """What one database already holds for one meter."""
+
+    record_ids: frozenset[str]
+    highest_sequence: int | None
+
+
 def default_database_path() -> Path:
     """Return the per-user SQLite database path."""
 
@@ -107,6 +115,43 @@ class MeasurementStore:
         return StoreSummary(
             inserted_count=inserted_count,
             duplicate_count=duplicate_count,
+        )
+
+    def device_state(
+        self,
+        *,
+        driver_id: str,
+        device_id: str,
+    ) -> StoredDeviceState:
+        """Return the records already stored for one meter, without writing."""
+
+        empty = StoredDeviceState(record_ids=frozenset(), highest_sequence=None)
+        if not self._path.exists():
+            return empty
+        connection: sqlite3.Connection | None = None
+        try:
+            connection = sqlite3.connect(self._path)
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+            if version != _SCHEMA_VERSION:
+                raise StoreError(
+                    f"unsupported measurement database version {version}"
+                )
+            rows = connection.execute(
+                "SELECT record_id, native_sequence FROM measurements "
+                "WHERE source_driver_id = ? AND source_device_id = ?",
+                (driver_id, device_id),
+            ).fetchall()
+        except StoreError:
+            raise
+        except (OSError, sqlite3.Error) as error:
+            raise StoreError(f"cannot read measurements: {error}") from error
+        finally:
+            if connection is not None:
+                connection.close()
+        sequences = [row[1] for row in rows if row[1] is not None]
+        return StoredDeviceState(
+            record_ids=frozenset(row[0] for row in rows),
+            highest_sequence=max(sequences) if sequences else None,
         )
 
     def _migrate_legacy_database(self) -> None:
@@ -217,5 +262,6 @@ __all__ = [
     "MeasurementStore",
     "StoreError",
     "StoreSummary",
+    "StoredDeviceState",
     "default_database_path",
 ]

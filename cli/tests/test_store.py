@@ -18,6 +18,7 @@ from bgmeter import GlucoseRecord, MeasurementTime  # noqa: E402
 from bgmeter_cli.store import (  # noqa: E402
     MeasurementStore,
     StoreError,
+    StoredDeviceState,
     StoreSummary,
     default_database_path,
 )
@@ -259,3 +260,67 @@ def test_store_rolls_back_parent_when_flag_insert_fails(tmp_path, record):
     with sqlite3.connect(database) as connection:
         assert connection.execute("SELECT COUNT(*) FROM measurements").fetchone() == (0,)
         assert connection.execute("SELECT COUNT(*) FROM measurement_flags").fetchone() == (0,)
+
+
+def test_device_state_of_a_missing_database_is_empty_and_creates_nothing(tmp_path):
+    database_path = tmp_path / "measurements.sqlite3"
+
+    state = MeasurementStore(database_path).device_state(
+        driver_id="fake", device_id="fake:meter-1"
+    )
+
+    assert state == StoredDeviceState(record_ids=frozenset(), highest_sequence=None)
+    assert not database_path.exists()
+
+
+def test_device_state_reports_stored_ids_and_highest_sequence(tmp_path, record):
+    database_path = tmp_path / "measurements.sqlite3"
+    store = MeasurementStore(database_path)
+    store.store(
+        (record, replace(record, record_id="fake:meter-1:9", native_sequence=9)),
+        stored_at=STORED_AT,
+    )
+
+    state = store.device_state(driver_id="fake", device_id="fake:meter-1")
+
+    assert state.record_ids == frozenset({"fake:meter-1:7", "fake:meter-1:9"})
+    assert state.highest_sequence == 9
+
+
+def test_device_state_is_scoped_to_one_driver_and_device(tmp_path, record):
+    database_path = tmp_path / "measurements.sqlite3"
+    store = MeasurementStore(database_path)
+    store.store(
+        (
+            record,
+            replace(
+                record,
+                record_id="fake:meter-2:42",
+                native_sequence=42,
+                source_device_id="fake:meter-2",
+            ),
+            replace(
+                record,
+                record_id="other:meter-1:99",
+                native_sequence=99,
+                source_driver_id="other",
+            ),
+        ),
+        stored_at=STORED_AT,
+    )
+
+    state = store.device_state(driver_id="fake", device_id="fake:meter-1")
+
+    assert state.record_ids == frozenset({"fake:meter-1:7"})
+    assert state.highest_sequence == 7
+
+
+def test_device_state_rejects_an_unsupported_schema_version(tmp_path):
+    database_path = tmp_path / "measurements.sqlite3"
+    with sqlite3.connect(database_path) as connection:
+        connection.execute("PRAGMA user_version = 99")
+
+    with pytest.raises(StoreError, match="version 99"):
+        MeasurementStore(database_path).device_state(
+            driver_id="fake", device_id="fake:meter-1"
+        )
