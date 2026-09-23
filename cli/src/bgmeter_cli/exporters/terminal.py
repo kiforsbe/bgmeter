@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from collections.abc import Mapping
 
 from bgmeter import ReadResult
 
 
-def render_terminal(result: ReadResult, *, show_raw: bool = False) -> str:
+def render_terminal(
+    result: ReadResult,
+    *,
+    show_raw: bool = False,
+    messages: Mapping[str, str] | None = None,
+) -> str:
     lines = [
         f"Meter: {result.device.selector} ({result.device.driver_id})",
         (
@@ -24,9 +30,10 @@ def render_terminal(result: ReadResult, *, show_raw: bool = False) -> str:
         local = record.measured_at.measured_at_local.isoformat()
         utc = record.measured_at.measured_at_utc.isoformat()
         value = record.mmol_l.quantize(Decimal("0.1"))
-        lines.append(
-            f"{record.record_id}: {value} mmol/L | local {local} | UTC {utc}"
-        )
+        line = f"{record.record_id}: {value} mmol/L | local {local} | UTC {utc}"
+        if messages is not None and record.record_id in messages:
+            line += f" | message {messages[record.record_id]}"
+        lines.append(line)
         if show_raw:
             request = record.raw.request.hex() if record.raw.request is not None else ""
             fragments = ",".join(item.hex() for item in record.raw.fragments)

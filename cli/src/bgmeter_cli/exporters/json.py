@@ -78,7 +78,9 @@ def _device_document(device: MeterDevice) -> dict[str, object]:
     }
 
 
-def read_result_document(result: ReadResult) -> dict[str, object]:
+def read_result_document(
+    result: ReadResult, *, messages: Mapping[str, str] | None = None
+) -> dict[str, object]:
     records: list[dict[str, object]] = []
     for record in result.records:
         measured_at = record.measured_at
@@ -95,6 +97,7 @@ def read_result_document(result: ReadResult) -> dict[str, object]:
                 "timezone": measured_at.timezone,
                 "utc_offset_seconds": measured_at.utc_offset_seconds,
                 "flags": normalize_value(record.flags),
+                "message": None if messages is None else messages.get(record.record_id),
                 "source_device_id": record.source_device_id,
                 "source_driver_id": record.source_driver_id,
                 "driver_data": normalize_value(record.driver_data),
@@ -120,7 +123,7 @@ def read_result_document(result: ReadResult) -> dict[str, object]:
         )
     return {
         "schema": "bgmeter.read-result",
-        "schema_version": 1,
+        "schema_version": 2,
         "completion": {
             "status": result.completion.value,
             "expected_count": result.expected_count,
@@ -139,10 +142,10 @@ def read_result_document(result: ReadResult) -> dict[str, object]:
     }
 
 
-def render_json(result: ReadResult) -> str:
+def render_json(result: ReadResult, *, messages: Mapping[str, str] | None = None) -> str:
     return (
         json.dumps(
-            read_result_document(result),
+            read_result_document(result, messages=messages),
             indent=2,
             sort_keys=True,
             ensure_ascii=False,

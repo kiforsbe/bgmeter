@@ -10,6 +10,7 @@ bgmeter info --device ble:AA-BB-CC-DD-EE-FF
 bgmeter read --device ble:AA-BB-CC-DD-EE-FF --timezone Europe/Stockholm
 bgmeter read --device ble:AA-BB-CC-DD-EE-FF --newest 20
 bgmeter read --device ble:AA-BB-CC-DD-EE-FF --new-only --store
+bgmeter read --device ble:AA-BB-CC-DD-EE-FF -m "After lunch" --store
 bgmeter read --device ble:AA-BB-CC-DD-EE-FF \
   --output terminal --output csv=records.csv --output json=records.json
 bgmeter drivers list --registered
@@ -24,10 +25,21 @@ record, while terminal output is intended for people and is not a stable data
 contract. Data is written to stdout or requested files; errors and selection
 prompts are written to stderr.
 
+`read` supports short options: `-d` device, `-D` driver, `-z` timezone, `-o`
+output, `-r` show raw, `-s` store, `-n` newest, `-N` new-only, `-f` force, and
+`-m` message. Shared logging options are `-v`, `-l` (log level), and `-L` (log
+file).
+
 `--newest N` reads only the N most recent records. `--new-only` stops at the
 first record the local measurement database already holds; it reads the database
 without writing to it. A read shortened by either flag is reported as
 `truncated`.
+
+`-m TEXT` / `--message TEXT` adds a message to the latest reading returned by a
+read. The message is included in terminal, CSV, and JSON output, and `--store`
+persists it. Saved messages for other records are also included when the local
+database can provide them; otherwise only the latest reading receives the new
+message.
 
 Exit statuses are `0` for a complete or deliberately truncated result, `2` for
 usage or ambiguous selection, `3` for no supported meter, `4` for connection or

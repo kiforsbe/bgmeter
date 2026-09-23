@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+from collections.abc import Mapping
 
 from bgmeter import ReadResult
 
@@ -23,6 +24,7 @@ CSV_COLUMNS = (
     "timezone",
     "utc_offset_seconds",
     "flags_json",
+    "message",
     "source_device_id",
     "source_driver_id",
     "raw_request_hex",
@@ -42,7 +44,7 @@ def _compact_json(value: object) -> str:
     )
 
 
-def render_csv(result: ReadResult) -> str:
+def render_csv(result: ReadResult, *, messages: Mapping[str, str] | None = None) -> str:
     stream = io.StringIO(newline="")
     writer = csv.DictWriter(stream, fieldnames=CSV_COLUMNS, lineterminator="\n")
     writer.writeheader()
@@ -63,6 +65,7 @@ def render_csv(result: ReadResult) -> str:
                 "timezone": measured_at.timezone,
                 "utc_offset_seconds": measured_at.utc_offset_seconds,
                 "flags_json": _compact_json(record.flags),
+                "message": "" if messages is None else messages.get(record.record_id, ""),
                 "source_device_id": record.source_device_id,
                 "source_driver_id": record.source_driver_id,
                 "raw_request_hex": (

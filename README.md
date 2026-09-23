@@ -103,12 +103,30 @@ bgmeter read --device ble:AA-BB-CC-DD-EE-FF --timezone Europe/Stockholm `
   --output json=readings.json
 ```
 
+Add a message to the latest reading returned by a read with `-m` (or
+`--message`):
+
+```powershell
+bgmeter read --device ble:AA-BB-CC-DD-EE-FF --timezone Europe/Stockholm `
+  -m "After lunch" --store
+```
+
+The message appears on that latest reading in terminal, CSV, and JSON output.
+When an existing local database has messages for older matching readings, those
+messages appear in the exports too. Without usable stored message data, only the
+newly supplied message is included, on the latest reading.
+
 `terminal` is intended for people. CSV has stable one-record-per-row columns.
 JSON is the canonical archival output: it preserves normalized records,
 completion state, diagnostics, driver metadata, and raw request/response bytes.
 Use `--show-raw` to include raw evidence in terminal output. Existing output
 files require `--force` to overwrite them. Treat JSON and raw output as
 sensitive data.
+
+The `read` options also have short forms: `-d` device, `-D` driver, `-z`
+timezone, `-o` output, `-r` show raw, `-s` store, `-n` newest, `-N` new-only,
+`-f` force, and `-m` message. Shared logging options are `-v`, `-l` for log
+level, and `-L` for log file.
 
 Reads do not write a database by default. Pass `--store` to persist unique
 normalized records locally:
@@ -120,8 +138,9 @@ bgmeter read --device ble:AA-BB-CC-DD-EE-FF --timezone Europe/Stockholm --store
 Storage uses `platformdirs.user_data_path("bgmeter", appauthor=False) /
 "measurements.sqlite3"` (normally `%LOCALAPPDATA%\bgmeter\measurements.sqlite3`
 on Windows). The unencrypted database stores
-measurement values, timestamp interpretations, source IDs, and relational
-flags; it deduplicates repeated reads by driver-scoped `record_id`. It does not
+measurement values, timestamp interpretations, source IDs, relational flags,
+and optional reading messages; it deduplicates repeated reads by driver-scoped
+`record_id`. It does not
 store raw protocol bytes, driver metadata, or retrieval diagnostics. Request
 JSON output when an archival capture of that evidence is needed.
 

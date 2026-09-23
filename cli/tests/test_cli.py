@@ -36,7 +36,7 @@ from bgmeter import (  # noqa: E402
     TransportEndpoint,
     UnsupportedDeviceError,
 )
-from bgmeter_cli.app import run  # noqa: E402
+from bgmeter_cli.app import _parser, run  # noqa: E402
 from bgmeter_cli.config import (  # noqa: E402
     CONFIG_SCHEMA,
     CONFIG_VERSION,
@@ -271,6 +271,47 @@ def test_missing_config_defaults_to_microtech_but_saved_empty_stays_empty(tmp_pa
         "schema_version": CONFIG_VERSION,
         "registered": [],
     }
+
+
+def test_read_supports_short_forms_for_its_options_and_logging_options():
+    arguments = _parser().parse_args(
+        [
+            "read",
+            "-d",
+            "fake:meter-1",
+            "-D",
+            "fake",
+            "-z",
+            "Europe/Stockholm",
+            "-o",
+            "terminal",
+            "-r",
+            "-s",
+            "-n",
+            "1",
+            "-N",
+            "-f",
+            "-m",
+            "After lunch",
+            "-l",
+            "debug",
+            "-L",
+            "bgmeter.log",
+        ]
+    )
+
+    assert arguments.device == "fake:meter-1"
+    assert arguments.driver == "fake"
+    assert arguments.timezone == "Europe/Stockholm"
+    assert arguments.output == ["terminal"]
+    assert arguments.show_raw is True
+    assert arguments.store is True
+    assert arguments.newest == 1
+    assert arguments.new_only is True
+    assert arguments.force is True
+    assert arguments.message == "After lunch"
+    assert arguments.log_level_sub == "debug"
+    assert arguments.log_file_sub == Path("bgmeter.log")
 
 
 def test_config_save_is_atomic_if_replace_fails(tmp_path, monkeypatch):
@@ -535,6 +576,135 @@ def test_read_stores_normalized_records_when_store_is_requested(
     assert status == 0
     with sqlite3.connect(database_path) as connection:
         assert connection.execute("SELECT COUNT(*) FROM measurements").fetchone() == (2,)
+
+
+def test_read_message_annotates_latest_record_and_exports_historic_messages(
+    tmp_path, monkeypatch, complete_result
+):
+    point = FakeEntryPoint("example", driver_factory())
+    install_entry_points(monkeypatch, point)
+    config_path = tmp_path / "drivers.json"
+    save_config(DriverConfig(("example",)), config_path)
+    database_path = tmp_path / "measurements.sqlite3"
+    MeasurementStore(database_path).store(
+        complete_result.records,
+        messages={complete_result.records[0].record_id: "Before breakfast"},
+    )
+    json_path = tmp_path / "records.json"
+    csv_path = tmp_path / "records.csv"
+    manager_factory = lambda registry, progress=None: FakeManager(
+        registry, devices=(make_device(),), result=complete_result
+    )
+
+    status, stdout, stderr = invoke(
+        [
+            "read",
+            "--device",
+            "fake:meter-1",
+            "-m",
+            "After lunch",
+            "--store",
+            "--output",
+            f"json={json_path}",
+            "--output",
+            f"csv={csv_path}",
+            "--output",
+            "terminal",
+        ],
+        config_path=config_path,
+        database_path=database_path,
+        manager_factory=manager_factory,
+    )
+
+    assert status == 0
+    assert stderr == ""
+    assert "fake:meter-1:7: 7.4 mmol/L" in stdout
+    assert "message Before breakfast" in stdout
+    assert "fake:meter-1:8: 5.0 mmol/L" in stdout
+    assert "message After lunch" in stdout
+    assert [item["message"] for item in json.loads(json_path.read_text())['records']] == [
+        "Before breakfast",
+        "After lunch",
+    ]
+    with csv_path.open(newline="", encoding="utf-8-sig") as stream:
+        assert [row["message"] for row in csv.DictReader(stream)] == [
+            "Before breakfast",
+            "After lunch",
+        ]
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute(
+            "SELECT message FROM measurements ORDER BY native_sequence"
+        ).fetchall() == [("Before breakfast",), ("After lunch",)]
+
+
+def test_read_message_without_a_database_only_annotates_the_latest_record(
+    tmp_path, monkeypatch, complete_result
+):
+    point = FakeEntryPoint("example", driver_factory())
+    install_entry_points(monkeypatch, point)
+    config_path = tmp_path / "drivers.json"
+    save_config(DriverConfig(("example",)), config_path)
+    database_path = tmp_path / "measurements.sqlite3"
+    manager_factory = lambda registry, progress=None: FakeManager(
+        registry, devices=(make_device(),), result=complete_result
+    )
+
+    status, stdout, stderr = invoke(
+        ["read", "--device", "fake:meter-1", "--message", "After lunch"],
+        config_path=config_path,
+        database_path=database_path,
+        manager_factory=manager_factory,
+    )
+
+    assert status == 0
+    assert stderr == ""
+    assert "message After lunch" in stdout
+    assert stdout.count("message ") == 1
+    assert not database_path.exists()
+
+
+def test_plain_store_does_not_overwrite_a_message_changed_after_lookup(
+    tmp_path, monkeypatch, complete_result
+):
+    point = FakeEntryPoint("example", driver_factory())
+    install_entry_points(monkeypatch, point)
+    config_path = tmp_path / "drivers.json"
+    save_config(DriverConfig(("example",)), config_path)
+    database_path = tmp_path / "measurements.sqlite3"
+    historical = complete_result.records[0]
+    MeasurementStore(database_path).store(
+        complete_result.records, messages={historical.record_id: "Original"}
+    )
+    original_messages_for = MeasurementStore.messages_for
+
+    def messages_for_then_change(self, record_ids):
+        messages = original_messages_for(self, record_ids)
+        with sqlite3.connect(database_path) as connection:
+            connection.execute(
+                "UPDATE measurements SET message = ? WHERE record_id = ?",
+                ("Changed elsewhere", historical.record_id),
+            )
+        return messages
+
+    monkeypatch.setattr(
+        MeasurementStore, "messages_for", messages_for_then_change
+    )
+    manager_factory = lambda registry, progress=None: FakeManager(
+        registry, devices=(make_device(),), result=complete_result
+    )
+
+    status, _, _ = invoke(
+        ["read", "--device", "fake:meter-1", "--store"],
+        config_path=config_path,
+        database_path=database_path,
+        manager_factory=manager_factory,
+    )
+
+    assert status == 0
+    with sqlite3.connect(database_path) as connection:
+        assert connection.execute(
+            "SELECT message FROM measurements WHERE record_id = ?", (historical.record_id,)
+        ).fetchone() == ("Changed elsewhere",)
 
 
 def test_partial_read_stores_valid_records_before_returning_status_five(
@@ -938,7 +1108,7 @@ def test_exporters_are_lossless_stable_and_human_readable(complete_result):
     document = json.loads(render_json(complete_result))
 
     assert document["schema"] == "bgmeter.read-result"
-    assert document["schema_version"] == 1
+    assert document["schema_version"] == 2
     assert document["completion"] == {
         "status": "complete",
         "expected_count": 2,
@@ -987,6 +1157,7 @@ def test_exporters_are_lossless_stable_and_human_readable(complete_result):
         "timezone",
         "utc_offset_seconds",
         "flags_json",
+        "message",
         "source_device_id",
         "source_driver_id",
         "raw_request_hex",
@@ -1051,7 +1222,7 @@ def test_read_supports_repeated_outputs_and_atomic_overwrite_protection(
     assert (status, stderr) == (0, "")
     assert "7.4 mmol/L" in stdout
     assert csv_path.read_text(encoding="utf-8-sig") == render_csv(complete_result)
-    assert json.loads(json_path.read_text(encoding="utf-8"))["schema_version"] == 1
+    assert json.loads(json_path.read_text(encoding="utf-8"))["schema_version"] == 2
     assert not list(tmp_path.glob(".*.tmp"))
 
     previous = csv_path.read_bytes()

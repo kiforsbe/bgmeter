@@ -878,13 +878,12 @@ classDiagram
 ### Command surface
 
 ```text
-bgmeter [-v|-vv] [--log-level LEVEL] [--log-file PATH] COMMAND ...
+bgmeter [-v|-vv] [-l LEVEL] [-L PATH] COMMAND ...
 
 bgmeter devices  [--driver DRIVER]
 bgmeter info     --device DEVICE [--driver DRIVER]
-bgmeter read     [--device DEVICE] [--driver DRIVER] [--timezone ZONE]
-                 [--output OUTPUT]... [--show-raw] [--store] [--newest N]
-                 [--new-only] [--force]
+bgmeter read     [-d DEVICE] [-D DRIVER] [-z ZONE]
+                 [-o OUTPUT]... [-r] [-s] [-m MESSAGE] [-n N] [-N] [-f]
 bgmeter drivers list [--available | --registered]
 bgmeter drivers info DRIVER
 bgmeter drivers register DRIVER
@@ -921,9 +920,10 @@ flowchart TD
     ds --> rd["manager.read(device,<br/>ReadOptions(timezone, newest_count,<br/>known_record_ids))"]
     rd --> rs{"--new-only and the meter reports fewer records<br/>than the highest stored sequence?"}
     rs -->|yes| rw["stderr: history appears reset or cleared,<br/>hint: run a full read"]
-    rs -->|no| st{"--store?"}
-    rw --> st
-    st -->|yes| db["MeasurementStore.store()<br/>on failure: no output is published, status 6"]
+    rs -->|no| msg["Load saved messages for returned records;<br/>apply -m to the latest record"]
+    rw --> msg
+    msg --> st{"--store?"}
+    st -->|yes| db["MeasurementStore.store(records, messages)<br/>on failure: no output is published, status 6"]
     st -->|no| rend
     db --> rend["Render every output<br/>in memory first"]
     rend --> pub["Publish: write files atomically,<br/>then write stdout output"]
@@ -998,7 +998,7 @@ Exporters live in the CLI source base. They consume only the public normalized
   mmol/L (one decimal) and local and UTC times, an indented raw-bytes line with
   `--show-raw`, and warnings. It is not a stable machine-readable schema.
 - **JSON** is the lossless, versioned representation. The document has schema
-  name `bgmeter.read-result` and integer `schema_version` 1, and contains
+  name `bgmeter.read-result` and integer `schema_version` 2, and contains
   completion statistics, device identity, records, warnings, and diagnostics.
   Decimals are strings to avoid floating-point alteration; `bytes` become
   hexadecimal (`{"$bytes_hex": ...}` inside metadata, `*_hex` fields for raw
@@ -1006,7 +1006,7 @@ Exporters live in the CLI source base. They consume only the public normalized
 - **CSV** has one record per row with stable columns: `record_id`,
   `native_sequence`, `mmol_l`, `native_value`, `native_unit`, `meter_datetime`,
   `measured_at_local`, `measured_at_utc`, `timezone`, `utc_offset_seconds`,
-  `flags_json`, `source_device_id`, `source_driver_id`, `raw_request_hex`,
+  `flags_json`, `message`, `source_device_id`, `source_driver_id`, `raw_request_hex`,
   `raw_fragments_json`, `raw_response_hex`, `raw_record_hex`, `driver_data_json`.
   Nested values use compact JSON inside a cell.
 
@@ -1022,13 +1022,17 @@ published and also covers the valid records of a partial result; a failure abort
 the command with status `6`.
 
 `MeasurementStore` owns its path, schema-version check (`PRAGMA user_version`,
-currently 1), connection lifecycle, and single write transaction. Records are
+currently 2), connection lifecycle, and single write transaction. Records are
 deduplicated solely by the public driver-scoped `record_id`. Raw captures, driver
 metadata, and diagnostics stay in the JSON export and are not stored. The store
 moves a database from the former platform-default location into the current one on
 the first write. `device_state()` is read-only: it never creates the file, never
 migrates the legacy path, and raises `StoreError` on an unsupported or zero-byte
-database.
+database. A v1 database gains the nullable `measurements.message` column on its
+next write. A supplied `-m` message is applied only to the latest record returned
+by the meter; existing messages are otherwise retained. Message lookup is
+best-effort for rendering, so without usable stored message data only that latest
+record has the newly supplied message.
 
 ```mermaid
 erDiagram
@@ -1048,6 +1052,7 @@ erDiagram
         REAL native_value
         TEXT native_unit
         TEXT stored_at_utc
+        TEXT message
     }
     measurement_flags {
         TEXT record_id PK, FK

@@ -95,6 +95,7 @@ def _add_reporting_options(parser: argparse.ArgumentParser, suffix: str) -> None
         help="explain progress in plain language (-v) with more detail (-vv)",
     )
     parser.add_argument(
+        "-l",
         "--log-level",
         type=str.lower,
         choices=LOG_LEVELS,
@@ -103,6 +104,7 @@ def _add_reporting_options(parser: argparse.ArgumentParser, suffix: str) -> None
         help=f"minimum level of technical log records (default: {DEFAULT_LOG_LEVEL})",
     )
     parser.add_argument(
+        "-L",
         "--log-file",
         type=Path,
         default=None,
@@ -141,32 +143,37 @@ def _parser() -> argparse.ArgumentParser:
 
     read = commands.add_parser("read", help="read records from a meter")
     _add_reporting_options(read, "sub")
-    read.add_argument("--device", help="device selector (required non-interactively)")
-    read.add_argument("--driver", help="restrict discovery to one registered driver")
+    read.add_argument("-d", "--device", help="device selector (required non-interactively)")
+    read.add_argument("-D", "--driver", help="restrict discovery to one registered driver")
     read.add_argument(
+        "-z",
         "--timezone",
         type=_timezone_name,
         help="IANA timezone for the meter wall clock",
     )
     read.add_argument(
+        "-o",
         "--output",
         action="append",
         help="repeat terminal, csv[=PATH], or json[=PATH]",
     )
-    read.add_argument("--show-raw", action="store_true", help="show raw bytes in terminal output")
-    read.add_argument("--store", action="store_true", help="store records in the local SQLite database")
+    read.add_argument("-r", "--show-raw", action="store_true", help="show raw bytes in terminal output")
+    read.add_argument("-s", "--store", action="store_true", help="store records in the local SQLite database")
+    read.add_argument("-m", "--message", help="attach a message to the latest reading")
     read.add_argument(
+        "-n",
         "--newest",
         type=_positive_count,
         metavar="N",
         help="read only the N most recent records",
     )
     read.add_argument(
+        "-N",
         "--new-only",
         action="store_true",
         help="stop at the first record already in the local database",
     )
-    read.add_argument("--force", action="store_true", help="replace existing output files")
+    read.add_argument("-f", "--force", action="store_true", help="replace existing output files")
 
     drivers = commands.add_parser("drivers", help="inspect persistent driver registration")
     _add_reporting_options(drivers, "sub")
@@ -308,16 +315,16 @@ def _check_destinations(outputs: Sequence[OutputSpec], *, force: bool) -> None:
             raise ExportError(f"output file {output.path} already exists (use --force)")
 
 
-def _render_outputs(result, outputs, *, show_raw):
+def _render_outputs(result, outputs, *, show_raw, messages):
     rendered = []
     for output in outputs:
         try:
             if output.format == "terminal":
-                payload = render_terminal(result, show_raw=show_raw)
+                payload = render_terminal(result, show_raw=show_raw, messages=messages)
             elif output.format == "csv":
-                payload = render_csv(result)
+                payload = render_csv(result, messages=messages)
             else:
-                payload = render_json(result)
+                payload = render_json(result, messages=messages)
         except Exception as error:
             raise ExportError(f"cannot render {output.format}: {error}") from error
         rendered.append((output, payload))
@@ -457,13 +464,33 @@ async def _run_meter_command(
             "hint: run a full read (without --new-only) to capture this meter's "
             "current history.\n"
         )
+    try:
+        store = MeasurementStore(database_path)
+    except StoreError as error:
+        if arguments.store:
+            raise ExportError(f"cannot store measurements: {error}") from error
+        store = None
+    try:
+        messages = (
+            store.messages_for(record.record_id for record in result.records)
+            if store is not None
+            else {}
+        )
+    except StoreError:
+        messages = {}
+    stored_messages = {}
+    if arguments.message is not None and result.records:
+        messages[result.records[-1].record_id] = arguments.message
+        stored_messages[result.records[-1].record_id] = arguments.message
     if arguments.store:
         _log.info("storing %d record(s)", len(result.records))
         try:
-            MeasurementStore(database_path).store(result.records)
+            store.store(result.records, messages=stored_messages)
         except StoreError as error:
             raise ExportError(f"cannot store measurements: {error}") from error
-    rendered = _render_outputs(result, outputs, show_raw=arguments.show_raw)
+    rendered = _render_outputs(
+        result, outputs, show_raw=arguments.show_raw, messages=messages
+    )
     _log.debug(
         "publishing outputs: %s",
         [(o.format, str(o.path) if o.path else "stdout") for o in outputs],

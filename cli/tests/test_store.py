@@ -113,18 +113,20 @@ def test_default_store_never_overwrites_new_path_database(tmp_path, record, monk
         ]
 
 
-def test_store_creates_v1_normalized_schema_and_rows(tmp_path, record):
+def test_store_creates_v2_normalized_schema_and_rows(tmp_path, record):
     database = tmp_path / "measurements.sqlite3"
 
-    summary = MeasurementStore(database).store((record,), stored_at=STORED_AT)
+    summary = MeasurementStore(database).store(
+        (record,), stored_at=STORED_AT, messages={record.record_id: "Before dinner"}
+    )
 
     assert summary == StoreSummary(inserted_count=1, duplicate_count=0)
     with sqlite3.connect(database) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone() == (1,)
+        assert connection.execute("PRAGMA user_version").fetchone() == (2,)
         assert connection.execute(
             "SELECT record_id, source_driver_id, source_device_id, native_sequence, "
             "meter_datetime, measured_at_local, measured_at_utc, timezone, "
-            "utc_offset_seconds, mmol_l, native_value, native_unit, stored_at_utc "
+            "utc_offset_seconds, mmol_l, native_value, native_unit, stored_at_utc, message "
             "FROM measurements"
         ).fetchone() == (
             record.record_id,
@@ -140,6 +142,7 @@ def test_store_creates_v1_normalized_schema_and_rows(tmp_path, record):
             134.0,
             "mg/dL",
             "2026-09-18T12:30:00+00:00",
+            "Before dinner",
         )
         assert connection.execute(
             "SELECT name, value FROM measurement_flags ORDER BY name"
@@ -147,7 +150,95 @@ def test_store_creates_v1_normalized_schema_and_rows(tmp_path, record):
         columns = {
             row[1] for row in connection.execute("PRAGMA table_info(measurements)")
         }
+        assert "message" in columns
         assert {"driver_data_json", "raw_json", "diagnostics_json"}.isdisjoint(columns)
+
+
+def test_store_migrates_v1_and_preserves_messages_on_plain_duplicate_store(tmp_path, record):
+    database = tmp_path / "measurements.sqlite3"
+    with sqlite3.connect(database) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE measurements (
+                record_id TEXT PRIMARY KEY,
+                source_driver_id TEXT NOT NULL,
+                source_device_id TEXT NOT NULL,
+                native_sequence INTEGER,
+                meter_datetime TEXT NOT NULL,
+                measured_at_local TEXT NOT NULL,
+                measured_at_utc TEXT NOT NULL,
+                timezone TEXT NOT NULL,
+                utc_offset_seconds INTEGER NOT NULL,
+                mmol_l REAL NOT NULL,
+                native_value REAL NOT NULL,
+                native_unit TEXT NOT NULL,
+                stored_at_utc TEXT NOT NULL
+            );
+            CREATE TABLE measurement_flags (
+                record_id TEXT NOT NULL REFERENCES measurements(record_id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                value INTEGER NOT NULL CHECK (value IN (0, 1)),
+                PRIMARY KEY (record_id, name)
+            );
+            PRAGMA user_version = 1;
+            """
+        )
+        connection.execute(
+            """
+            INSERT INTO measurements VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record.record_id,
+                record.source_driver_id,
+                record.source_device_id,
+                record.native_sequence,
+                record.measured_at.meter_datetime.isoformat(),
+                record.measured_at.measured_at_local.isoformat(),
+                record.measured_at.measured_at_utc.isoformat(),
+                record.measured_at.timezone,
+                record.measured_at.utc_offset_seconds,
+                float(record.mmol_l),
+                float(record.native_value),
+                record.native_unit,
+                STORED_AT.isoformat(),
+            ),
+        )
+
+    first = MeasurementStore(database).store(
+        (record,), messages={record.record_id: "After a run"}
+    )
+    second = MeasurementStore(database).store((record,))
+
+    assert first == StoreSummary(0, 1)
+    assert second == StoreSummary(0, 1)
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone() == (2,)
+        assert connection.execute(
+            "SELECT message FROM measurements WHERE record_id = ?", (record.record_id,)
+        ).fetchone() == ("After a run",)
+
+
+def test_messages_for_batches_requests_below_the_sqlite_variable_limit(
+    tmp_path, record, monkeypatch
+):
+    database = tmp_path / "measurements.sqlite3"
+    records = tuple(
+        replace(record, record_id=f"fake:meter-1:{sequence}", native_sequence=sequence)
+        for sequence in range(1, 5)
+    )
+    messages = {item.record_id: f"Message {item.native_sequence}" for item in records}
+    store = MeasurementStore(database)
+    store.store(records, messages=messages)
+    real_connect = sqlite3.connect
+
+    def limited_connect(*args, **kwargs):
+        connection = real_connect(*args, **kwargs)
+        connection.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 3)
+        return connection
+
+    monkeypatch.setattr("bgmeter_cli.store.sqlite3.connect", limited_connect)
+
+    assert store.messages_for(item.record_id for item in records) == messages
 
 
 def test_store_deduplicates_by_record_id_and_keeps_first_flags(tmp_path, record):

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -13,7 +13,8 @@ from platformdirs import user_data_path
 from bgmeter import GlucoseRecord
 
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
+_READABLE_SCHEMA_VERSIONS = frozenset({1, _SCHEMA_VERSION})
 _SCHEMA_STATEMENTS = (
     """
 CREATE TABLE measurements (
@@ -29,7 +30,8 @@ CREATE TABLE measurements (
     mmol_l REAL NOT NULL,
     native_value REAL NOT NULL,
     native_unit TEXT NOT NULL,
-    stored_at_utc TEXT NOT NULL
+    stored_at_utc TEXT NOT NULL,
+    message TEXT
 )
 """,
     """
@@ -88,10 +90,12 @@ class MeasurementStore:
         records: Iterable[GlucoseRecord],
         *,
         stored_at: datetime | None = None,
+        messages: Mapping[str, str | None] | None = None,
     ) -> StoreSummary:
         """Insert unique normalized records and return insertion counts."""
 
         materialized_records = tuple(records)
+        messages = {} if messages is None else messages
         stored_at_utc = self._stored_at_utc(stored_at)
         connection: sqlite3.Connection | None = None
         try:
@@ -101,9 +105,9 @@ class MeasurementStore:
             connection = sqlite3.connect(self._path)
             connection.execute("PRAGMA foreign_keys = ON")
             self._ensure_schema(connection)
-            self._validate_records(materialized_records)
+            self._validate_records(materialized_records, messages)
             inserted_count, duplicate_count = self._insert_records(
-                connection, materialized_records, stored_at_utc
+                connection, materialized_records, stored_at_utc, messages
             )
         except StoreError:
             raise
@@ -132,7 +136,7 @@ class MeasurementStore:
         try:
             connection = sqlite3.connect(self._path)
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version != _SCHEMA_VERSION:
+            if version not in _READABLE_SCHEMA_VERSIONS:
                 raise StoreError(
                     f"unsupported measurement database version {version}"
                 )
@@ -154,6 +158,40 @@ class MeasurementStore:
             highest_sequence=max(sequences) if sequences else None,
         )
 
+    def messages_for(self, record_ids: Iterable[str]) -> dict[str, str]:
+        """Return saved messages for the requested record IDs without writing."""
+
+        requested_ids = tuple(dict.fromkeys(record_ids))
+        if not requested_ids or not self._path.exists():
+            return {}
+        connection: sqlite3.Connection | None = None
+        try:
+            connection = sqlite3.connect(self._path)
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+            if version == 1:
+                return {}
+            if version != _SCHEMA_VERSION:
+                raise StoreError(f"unsupported measurement database version {version}")
+            batch_size = connection.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER)
+            messages = {}
+            for start in range(0, len(requested_ids), batch_size):
+                batch = requested_ids[start : start + batch_size]
+                placeholders = ", ".join("?" for _ in batch)
+                rows = connection.execute(
+                    "SELECT record_id, message FROM measurements "
+                    f"WHERE record_id IN ({placeholders}) AND message IS NOT NULL",
+                    batch,
+                ).fetchall()
+                messages.update(rows)
+            return messages
+        except StoreError:
+            raise
+        except (OSError, sqlite3.Error) as error:
+            raise StoreError(f"cannot read measurement messages: {error}") from error
+        finally:
+            if connection is not None:
+                connection.close()
+
     def _migrate_legacy_database(self) -> None:
         legacy_path = _legacy_database_path()
         if self._path.exists() or not legacy_path.exists():
@@ -167,13 +205,20 @@ class MeasurementStore:
             raise StoreError(f"cannot migrate legacy measurement database: {error}") from error
 
     @staticmethod
-    def _validate_records(records: tuple[GlucoseRecord, ...]) -> None:
+    def _validate_records(
+        records: tuple[GlucoseRecord, ...], messages: Mapping[str, str | None]
+    ) -> None:
         for record in records:
             for name, value in record.flags.items():
                 if not isinstance(name, str) or not name:
                     raise StoreError("flag names must be non-empty strings")
                 if not isinstance(value, bool):
                     raise StoreError("flag values must be bool")
+        for record_id, message in messages.items():
+            if not isinstance(record_id, str):
+                raise StoreError("message record IDs must be strings")
+            if message is not None and not isinstance(message, str):
+                raise StoreError("messages must be strings or None")
 
     @staticmethod
     def _stored_at_utc(stored_at: datetime | None) -> str:
@@ -191,6 +236,9 @@ class MeasurementStore:
             version = connection.execute("PRAGMA user_version").fetchone()[0]
             if version == _SCHEMA_VERSION:
                 pass
+            elif version == 1:
+                connection.execute("ALTER TABLE measurements ADD COLUMN message TEXT")
+                connection.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
             elif version != 0:
                 raise StoreError(f"unsupported measurement database version {version}")
             else:
@@ -214,6 +262,7 @@ class MeasurementStore:
         connection: sqlite3.Connection,
         records: tuple[GlucoseRecord, ...],
         stored_at_utc: str,
+        messages: Mapping[str, str | None],
     ) -> tuple[int, int]:
         inserted_count = 0
         duplicate_count = 0
@@ -224,8 +273,9 @@ class MeasurementStore:
                     INSERT INTO measurements(
                         record_id, source_driver_id, source_device_id, native_sequence,
                         meter_datetime, measured_at_local, measured_at_utc, timezone,
-                        utc_offset_seconds, mmol_l, native_value, native_unit, stored_at_utc
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        utc_offset_seconds, mmol_l, native_value, native_unit, stored_at_utc,
+                        message
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(record_id) DO NOTHING
                     """,
                     (
@@ -242,6 +292,7 @@ class MeasurementStore:
                         float(record.native_value),
                         record.native_unit,
                         stored_at_utc,
+                        messages.get(record.record_id),
                     ),
                 ).rowcount
                 if inserted:
@@ -254,6 +305,12 @@ class MeasurementStore:
                         ],
                     )
                 else:
+                    message = messages.get(record.record_id)
+                    if message is not None:
+                        connection.execute(
+                            "UPDATE measurements SET message = ? WHERE record_id = ?",
+                            (message, record.record_id),
+                        )
                     duplicate_count += 1
         return inserted_count, duplicate_count
 
