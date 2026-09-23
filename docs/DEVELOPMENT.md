@@ -156,7 +156,7 @@ With that flag, the CLI-private `MeasurementStore` stores valid records before
 rendering or publishing requested output. It owns the unencrypted database at
 `platformdirs.user_data_path("bgmeter", appauthor=False) / "measurements.sqlite3"`
 (normally `%LOCALAPPDATA%\bgmeter\measurements.sqlite3` on Windows). It is
-separate from driver registration and has `PRAGMA user_version = 1`.
+separate from driver registration and has `PRAGMA user_version = 2`.
 
 On Windows, the store explicitly disables `platformdirs`' optional application
 author directory so the path has only one `bgmeter` segment. When a legacy

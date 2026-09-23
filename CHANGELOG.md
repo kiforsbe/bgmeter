@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.0] - Unreleased
+
+### Added
+
+- `bgmeter read -m TEXT` / `--message TEXT` annotates the latest reading from a
+  read. Messages appear in terminal, CSV, and JSON output and are persisted with
+  `--store`; previously saved messages are included for matching historical
+  readings when available.
+- Short forms for `read` options: `-d`, `-D`, `-z`, `-o`, `-r`, `-s`, `-n`,
+  `-N`, `-f`, and `-m`; shared logging options now have `-l` and `-L` forms.
+
+### Changed
+
+- The measurement database schema is now version 2, adding nullable per-reading
+  messages and migrating existing version 1 databases on their next write.
+- JSON read exports now use schema version 2, and CSV exports include a
+  `message` column.
+
 ## [0.3.0] - 2026-09-21
 
 ### Added

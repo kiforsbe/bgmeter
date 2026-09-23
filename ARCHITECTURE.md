@@ -1,7 +1,7 @@
 # Architecture
 
 This document describes the implemented architecture of `bgmeter` at version
-0.3.0: three independently packaged Python source bases (a protocol-neutral
+0.4.0: three independently packaged Python source bases (a protocol-neutral
 core, a MicroTech driver, and a command-line frontend) colocated in this
 repository. The root `gocheck.py` is only a deprecated compatibility launcher
 for the CLI.
@@ -1282,7 +1282,7 @@ standard driver entry point. This repository's default CLI installation depends
 on both distributions, thereby shipping GoChek/Wellion support while keeping the
 CLI itself driver-neutral.
 
-Package metadata uses normal versioned dependencies (`bgmeter-core>=0.2,<0.3`)
+Package metadata uses normal versioned dependencies (`bgmeter-core>=0.4,<0.5`)
 rather than relative path dependencies. Monorepo development installs core, then
 the MicroTech driver, then the CLI (see
 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md)).
